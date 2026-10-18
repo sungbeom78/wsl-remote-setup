@@ -27,6 +27,11 @@ public sealed record StatusFacts
     public bool? FirewallRuleExists { get; init; }
     public bool? Listening { get; init; }
     public bool? SshAnswers { get; init; }
+    /// <summary>접속 주소가 지금 이 PC에 있는지(주소가 바뀌었으면 false).</summary>
+    public bool? ListenAddressPresent { get; init; }
+    /// <summary>접속 주소를 가진 네트워크가 자동 할당(DHCP)인지.</summary>
+    public bool? AddressIsDhcp { get; init; }
+    public string? CurrentAddress { get; init; }
     public DateTimeOffset Now { get; init; }
 }
 
@@ -131,6 +136,19 @@ public static class StatusEvaluator
             false => new("방화벽", Health.Bad, "허용 규칙이 없어 다른 PC에서 접속이 막힙니다."),
             null => new("방화벽", Health.Unknown, "확인하지 못했습니다."),
         });
+
+        // 7. 이 PC 주소(DHCP 여부)
+        if (f.ListenAddressPresent == false)
+        {
+            lines.Add(new("이 PC 주소", Health.Bad,
+                $"접속 주소 {f.ListenAddress}가 이 PC에 없습니다{(f.CurrentAddress is { } now ? $"(지금 주소: {now})" : "")}. 주소가 바뀐 것 같습니다."));
+            next.Add("공유기에서 이 PC 주소를 고정 배정(DHCP 예약)하거나, 'forward plan'으로 새 주소에 맞춰 다시 설정하세요.");
+        }
+        else if (f.AddressIsDhcp == true)
+            lines.Add(new("이 PC 주소", Health.Warn, $"{f.ListenAddress} (공유기가 자동으로 정한 주소라 바뀔 수 있음)",
+                "공유기에서 이 PC 주소를 고정 배정(DHCP 예약)하면 안전합니다."));
+        else if (f.AddressIsDhcp == false)
+            lines.Add(new("이 PC 주소", Health.Good, $"{f.ListenAddress} (고정 주소)"));
 
         if (f.SshAnswers == false && f.Paused != true && f.WslRunning == true && f.Listening == true)
             next.Add("WSL 안의 SSH 서버 상태를 확인해야 합니다.");

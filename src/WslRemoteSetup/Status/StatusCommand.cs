@@ -124,6 +124,21 @@ internal static class StatusCommand
         bool? firewall = FirewallRuleExists(ruleName);
         h.Detail("방화벽 규칙", $"{ruleName}: {firewall}");
 
+        // 접속 주소가 지금도 이 PC에 있는지, 그 네트워크가 자동 할당(DHCP)인지
+        bool? present = false, dhcp = null;
+        string? currentAddress = null;
+        foreach (var ni in NetworkInterface.GetAllNetworkInterfaces().Where(n => n.OperationalStatus == OperationalStatus.Up))
+        {
+            var props = ni.GetIPProperties();
+            var v4 = props.UnicastAddresses.Where(u => u.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork).Select(u => u.Address.ToString()).ToList();
+            bool? isDhcp = null;
+            try { isDhcp = props.GetIPv4Properties().IsDhcpEnabled; } catch (NetworkInformationException) { }
+            if (v4.Contains(listen)) { present = true; dhcp = isDhcp; break; }
+            if (props.GatewayAddresses.Any(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) && v4.Count > 0)
+                currentAddress ??= v4[0];
+        }
+        h.Detail("접속 주소 존재", $"{present}, DHCP={dhcp}, 현재 주소={currentAddress}");
+
         var listening = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(e => e.Port == port && e.Address.ToString() == listen);
         var banner = await WindowsForwarding.ReadBannerAsync(IPAddress.Parse(listen), port, TimeSpan.FromSeconds(3));
         h.Detail("수신", listening.ToString());
@@ -149,6 +164,9 @@ internal static class StatusCommand
             FirewallRuleExists = firewall,
             Listening = listening,
             SshAnswers = banner?.StartsWith("SSH-2.0-", StringComparison.Ordinal) == true,
+            ListenAddressPresent = present,
+            AddressIsDhcp = dhcp,
+            CurrentAddress = present == true ? null : currentAddress,
             Now = now,
         };
     }

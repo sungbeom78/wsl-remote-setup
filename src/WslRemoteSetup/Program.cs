@@ -104,10 +104,15 @@ internal static class App
                 case "0":
                     return ExitOk;
                 case "1":
-                    await PlanAsync(Options.Empty);
+                {
+                    var snap = await CollectAsync();
+                    var choices = await WslRemoteSetup.Setup.SetupWizard.AskAsync(snap);
+                    if (choices is null) break;
+                    await PlanAsync(Options.Empty, WslRemoteSetup.Setup.SetupWizard.ToDesired(choices), snap);
                     Console.WriteLine();
-                    Console.WriteLine("이 버전은 진단과 계획까지만 제공합니다. 적용 단계는 이후 버전에서 단계별 승인과 함께 제공됩니다.");
+                    Console.WriteLine("  선택한 값은 저장했습니다. 실제 설치(단계별 승인)는 다음 버전의 설치 마법사에서 이어서 진행합니다.");
                     break;
+                }
                 case "2":
                     await DoctorAsync(Options.Empty);
                     await WslRemoteSetup.Status.StatusCommand.RunAsync();
@@ -163,20 +168,31 @@ internal static class App
         return results.Any(r => r.Status == CheckStatus.Fail) ? ExitChecksFailed : ExitOk;
     }
 
-    private static async Task<int> PlanAsync(Options o)
+    private static async Task<int> PlanAsync(Options o, DesiredConfiguration? given = null, EnvironmentSnapshot? snap = null)
     {
-        var desired = o.ToDesired();
+        var desired = given ?? o.ToDesired();
         var invalid = desired.Validate();
         if (invalid.Count > 0) { invalid.ToList().ForEach(Console.Error.WriteLine); return ExitUsage; }
 
-        var snapshot = await CollectAsync();
+        var snapshot = snap ?? await CollectAsync();
         var plan = Planner.Create(snapshot, desired, DateTimeOffset.Now);
         Console.WriteLine();
-        Console.WriteLine($"설치 계획 — 소유 계정 {desired.OwnerAccountName ?? "(현재 사용자)"}, 배포판 {desired.DistroName}, Linux {desired.LinuxUser}, 수신 TCP {desired.ListenPort} → WSL {desired.WslSshPort}, SSH 인증 {(desired.SshAuth == SshAuthentication.PublicKeyOnly ? "공개키만" : "비밀번호+공개키")}");
+        Console.WriteLine($"설치 계획 — 계정 {desired.OwnerAccountName ?? "(현재 사용자)"}, WSL {desired.DistroName}, Linux 사용자 {desired.LinuxUser}, 외부 포트 {desired.ListenPort}번, 로그인 {(desired.SshAuth == SshAuthentication.PublicKeyOnly ? "키로만" : "비밀번호 또는 키")}");
         Console.WriteLine("이 명령은 시스템을 변경하지 않습니다.");
+        DhcpNotice(snapshot);
         Console.WriteLine();
         ConsoleReport.PrintPlan(plan);
         return ExitOk;
+    }
+
+    /// <summary>이 PC 주소가 자동 할당(DHCP)이면 바뀔 수 있음을 알린다(ADR 0007 이전의 기본 동작).</summary>
+    internal static void DhcpNotice(EnvironmentSnapshot s)
+    {
+        var routed = s.Interfaces?.Where(i => i.IsUp && i.Gateways.Count > 0 && i.Ipv4.Count > 0).ToList();
+        if (routed is not { Count: 1 } || routed[0].DhcpEnabled != true) return;
+        Console.WriteLine();
+        WslRemoteSetup.Reporting.Ui.Note($"이 PC 주소({routed[0].Ipv4[0].Address})는 공유기가 자동으로 정해 주는 주소라 바뀔 수 있습니다.");
+        WslRemoteSetup.Reporting.Ui.Note("주소가 바뀌면 다른 PC에서 접속이 끊깁니다. 공유기 설정에서 이 PC에 주소를 고정 배정(DHCP 예약)하는 것을 권장합니다.");
     }
 
     /// <summary>개발용 M3 실기 POC. 배포판을 기동한다. 사용자 승인 후에만 실행한다(help에 표시하지 않음).</summary>

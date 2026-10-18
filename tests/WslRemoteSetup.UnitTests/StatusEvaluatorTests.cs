@@ -96,6 +96,23 @@ public class StatusEvaluatorTests
     }
 
     [Fact]
+    public void Static_address_is_good_and_dhcp_is_warned()
+    {
+        Assert.Equal(Health.Good, Line(StatusEvaluator.Evaluate(Healthy() with { AddressIsDhcp = false, ListenAddressPresent = true }), "이 PC 주소").Health);
+        var dhcp = StatusEvaluator.Evaluate(Healthy() with { AddressIsDhcp = true, ListenAddressPresent = true });
+        Assert.Equal(Health.Warn, Line(dhcp, "이 PC 주소").Health);
+        Assert.Equal(Health.Warn, dhcp.Overall); // SSH는 되지만 확인 필요
+    }
+
+    [Fact]
+    public void Changed_address_is_explained_with_next_step()
+    {
+        var r = StatusEvaluator.Evaluate(Healthy() with { ListenAddressPresent = false, CurrentAddress = "192.168.1.37", Listening = false, SshAnswers = false });
+        Assert.Contains("192.168.1.37", Line(r, "이 PC 주소").Text);
+        Assert.Contains(r.NextSteps, s => s.Contains("DHCP 예약"));
+    }
+
+    [Fact]
     public void Not_installed_is_off()
     {
         var r = StatusEvaluator.Evaluate(new StatusFacts { Installed = false, Now = Now });
