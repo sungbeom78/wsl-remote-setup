@@ -242,3 +242,14 @@
 | G2 비밀번호 로그인 해제 | NOT_APPLICABLE | 사용자 결정에 따라 유지(mRemoteNG 사용). `disable-password-auth.sh`는 실행하지 않음 |
 | 제품 선택 옵션 `--ssh-auth password|key-only` | PASS(단위·CLI) | 단위 172 / 통합 5. key-only를 고르면 `ssh-key-only` 단계가 추가되고, 잘못된 값은 exit 2 |
 | `install-openssh.sh --password-auth` | 구문 PASS | 실기 재실행은 하지 않음(G2는 이미 yes로 구성됨) |
+
+## 2026-10-18 — M5 코드 단계 (시스템 변경 없음)
+
+| 항목 | 결과 | 비고 |
+|---|---|---|
+| 단위 테스트 | PASS | 188. 에이전트 루프 9개(T11 주소 변경, T13 backoff·상한·경고 1회, T16 pause 중 재기동 없음, keeper 크래시 반복 억제, 재확인 주기). 로그온 작업 XML 5개 |
+| 통합 테스트 | PASS | 9. 보호 경로 ACL 판정: 사용자 temp·저장소 빌드 산출물은 신뢰하지 않음, System32는 신뢰 |
+| `conhost.exe --headless` | PASS | 22631에서 창 없이 실행되고 exit 0 |
+| 단일 EXE publish | PASS | self-contained win-x64 73.2 MB, SHA-256 `9a2d6f0b…6a10299`, 버전 `0.1.0-m2+7a3997e` |
+| `autostart plan` | PASS | 적용 가능. 시스템 변경 없음 |
+| 서비스·로그온 작업 실기 | PENDING | 승인 대기 |

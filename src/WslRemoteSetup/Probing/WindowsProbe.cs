@@ -277,7 +277,7 @@ public sealed class WindowsProbe(ICommandRunner runner)
         IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners()
             .Select(e => e.Port).Distinct().Order().ToList();
 
-    private static IReadOnlyList<PortProxyRule> ProbePortProxy()
+    internal static IReadOnlyList<PortProxyRule> ProbePortProxy()
     {
         var list = new List<PortProxyRule>();
         using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\PortProxy\v4tov4\tcp");

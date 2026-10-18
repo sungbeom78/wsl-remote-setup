@@ -39,7 +39,7 @@ internal static class App
             if (args.Length == 0) return await InteractiveAsync();
 
             var command = args[0].ToLowerInvariant();
-            var sub = command == "forward" && args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1].ToLowerInvariant() : null;
+            var sub = command is "forward" or "autostart" && args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1].ToLowerInvariant() : null;
             var options = Options.Parse(args.Skip(sub is null ? 1 : 2).ToArray());
             if (options.Error is not null)
             {
@@ -57,7 +57,14 @@ internal static class App
                     options.WslIp, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro)),
                 "help" or "--help" or "-h" or "/?" => Help(),
                 "version" or "--version" => PrintVersion(),
-                "install" or "resume" or "repair" or "pause" or "resume-monitoring" or "uninstall" => NotYet(command),
+                "agent" => options.InstallationId is { } aid
+                    ? await WslRemoteSetup.Agent.AgentCommand.RunAsync(aid, options.Distro ?? DesiredConfiguration.DefaultDistro)
+                    : Usage("agent --installation-id <guid> [--distro <이름>]"),
+                "service" => await WslRemoteSetup.Service.ServiceCommand.RunAsync(),
+                "autostart" => await WslRemoteSetup.Service.AutostartCommand.RunAsync(new(sub ?? "", options.InstallationId, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro)),
+                "pause" => WslRemoteSetup.Agent.AgentCommand.SetPaused(true),
+                "resume-monitoring" => WslRemoteSetup.Agent.AgentCommand.SetPaused(false),
+                "install" or "resume" or "repair" or "uninstall" => NotYet(command),
                 _ => Unknown(command),
             };
         }
@@ -220,6 +227,8 @@ internal static class App
               WslRemoteSetup.exe plan [옵션]     현재 상태 기반 설치 계획(변경 없음)
               WslRemoteSetup.exe status          설치 상태 파일 확인
               WslRemoteSetup.exe forward plan|apply|remove  Windows→WSL SSH 포워딩·LAN 방화벽(apply/remove는 관리자)
+              WslRemoteSetup.exe autostart plan|install|remove  로그온 에이전트·네트워크 관리 서비스(install/remove는 관리자)
+              WslRemoteSetup.exe pause | resume-monitoring  자동 복구 일시중지/재개(소유자 계정)
               WslRemoteSetup.exe version
 
             옵션:
@@ -230,12 +239,18 @@ internal static class App
               --ssh-auth password|key-only  SSH 로그인 방식 (기본: password = 비밀번호+공개키)
               --json <파일>             doctor 결과를 JSON으로 저장
 
-            install/resume/repair/pause/resume-monitoring/uninstall은 이후 버전에서 제공됩니다.
+            install/resume/repair/uninstall은 이후 버전에서 제공됩니다.
             """);
         return ExitOk;
     }
 
     private static int PrintVersion() { Console.WriteLine(Version); return ExitOk; }
+
+    private static int Usage(string usage)
+    {
+        Console.Error.WriteLine($"사용: {usage}");
+        return ExitUsage;
+    }
 
     private static int NotYet(string command)
     {
