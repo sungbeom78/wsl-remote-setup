@@ -43,6 +43,8 @@ internal static class AutostartCommand
         "plan" => await PlanOrInstallAsync(o, install: false),
         "install" => await PlanOrInstallAsync(o, install: true),
         "remove" => await RemoveAsync(o),
+        "boot-poc-create" => await BootPocAsync(create: true),
+        "boot-poc-remove" => await BootPocAsync(create: false),
         _ => Usage(),
     };
 
@@ -312,6 +314,58 @@ internal static class AutostartCommand
         Console.WriteLine();
         if (p.Blockers.Count == 0) Ui.Line("확인 결과: 진행할 수 있습니다.");
         else foreach (var b in p.Blockers) Ui.Blocked(b);
+    }
+
+    /// <summary>
+    /// 로그인 전 무인 실행 POC(후속 범위): 시스템 시작 시 소유자 S4U(암호 저장 안 함)로 에이전트를 실행하는 작업.
+    /// 로그인 후 작업과 동시에 돌아도 에이전트 잠금 파일로 하나만 동작한다. 기록은 scheduled-task로 남겨 제거 대상에 포함된다.
+    /// </summary>
+    private static async Task<int> BootPocAsync(bool create)
+    {
+        if (!WindowsForwarding.IsElevated()) { Console.Error.WriteLine("관리자 권한이 필요합니다. 관리자 창(UAC 승인)에서 다시 실행해 주세요."); return App.ExitUsage; }
+        var store = new StateStore(ProtectedPaths.StateFile);
+        var state = store.Load().State;
+        if (state?.OwnerSid is null || !File.Exists(ProtectedPaths.InstalledExe)) { Ui.Blocked("자동 실행 설정(autostart install)이 먼저 필요합니다."); return App.ExitChecksFailed; }
+        var taskName = $@"\WslRemoteSetup\BootAgent-{state.InstallationId.ToString("N")[..8]}";
+        var history = Ui.OpenHistory(create ? "로그인 전 무인 실행 POC 등록" : "로그인 전 무인 실행 POC 제거");
+        var runner = Runner();
+        Ui.Title(create ? "로그인 전 무인 실행 시험 등록" : "로그인 전 무인 실행 시험 제거");
+        if (create)
+        {
+            Ui.Line("컴퓨터가 켜지면 로그인하지 않아도 WSL을 켜 두고 연결을 점검하는 작업을 시험으로 등록합니다.");
+            Ui.Line("  - 실행 계정: 설정한 계정(관리자 권한 없이), 비밀번호는 저장하지 않습니다(S4U 방식).");
+            Ui.Line("  - 로그인 후 자동 실행과 함께 있어도 하나만 동작합니다.");
+            Ui.Line("  - 시험이 끝나면 'autostart boot-poc-remove'로 지울 수 있습니다(되돌리기 2단계에도 포함).");
+        }
+        else Ui.Line("시험용 부팅 작업을 지웁니다. 로그인 후 자동 실행은 그대로 둡니다.");
+        if (!ConfirmPrompt.Ask(out var code)) { history.Finish("취소"); return code; }
+
+        var resources = state.ResourceOwnership.ToList();
+        if (create)
+        {
+            var args = $"--headless \"{ProtectedPaths.InstalledExe}\" agent --installation-id {state.InstallationId:D} --distro {state.DistroName ?? "Ubuntu-24.04"}";
+            var xml = LogonTaskXml.BuildBoot(state.OwnerSid, Conhost, args, $"WslRemoteSetup {state.InstallationId:D}: 로그인 전 무인 실행(POC)");
+            var xmlPath = Path.Combine(ProtectedPaths.PolicyDirectory, "boot-task.xml");
+            await File.WriteAllTextAsync(xmlPath, xml, Encoding.Unicode);
+            history.Detail("작업", taskName);
+            history.Detail("방식", "BootTrigger(+30s), S4U, LeastPrivilege");
+            var r = await runner.RunAsync(new CommandSpec(Schtasks, ["/Create", "/TN", taskName, "/XML", xmlPath, "/F"]) { Timeout = TimeSpan.FromSeconds(30) });
+            if (!r.ExitedZero) { Ui.Blocked($"등록 실패: {r.StandardOutput.Trim()} {r.StandardError.Trim()}"); history.Finish("실패"); return App.ExitChecksFailed; }
+            resources.RemoveAll(x => x.Kind == "scheduled-task" && x.Key == taskName);
+            resources.Add(new OwnedResource("scheduled-task", taskName, "로그인 전 무인 실행(POC)", DateTimeOffset.UtcNow) { Value = state.OwnerSid });
+            Ui.Line("✔ 등록했습니다. 재부팅 후 로그인하기 전에 다른 PC에서 SSH 접속을 시험해 보세요.");
+        }
+        else
+        {
+            await runner.RunAsync(new CommandSpec(Schtasks, ["/End", "/TN", taskName]) { Timeout = TimeSpan.FromSeconds(20) });
+            await runner.RunAsync(new CommandSpec(Schtasks, ["/Delete", "/TN", taskName, "/F"]) { Timeout = TimeSpan.FromSeconds(20) });
+            resources.RemoveAll(x => x.Kind == "scheduled-task" && x.Key == taskName);
+            Ui.Line("✔ 지웠습니다.");
+        }
+        store.Save(state with { ResourceOwnership = resources });
+        history.Finish("완료");
+        Ui.HistoryHint(history);
+        return App.ExitOk;
     }
 
     private static string? ExistingPolicyHostKey()

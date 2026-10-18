@@ -50,6 +50,19 @@ public class LogonTaskXmlTests
         Assert.Throws<ArgumentException>(() => LogonTaskXml.Build(sid, @"C:\x.exe", "", ""));
 
     [Fact]
+    public void Boot_task_uses_startup_trigger_and_s4u_without_password()
+    {
+        var doc = XDocument.Parse(LogonTaskXml.BuildBoot(Sid, @"C:\Windows\System32\conhost.exe", "agent", "boot poc"));
+        var trig = doc.Descendants(Ns + "Triggers").Single().Elements().Single();
+        Assert.Equal("BootTrigger", trig.Name.LocalName);
+        var p = doc.Descendants(Ns + "Principal").Single();
+        Assert.Equal(Sid, p.Element(Ns + "UserId")!.Value);
+        Assert.Equal("S4U", p.Element(Ns + "LogonType")!.Value);
+        Assert.Equal("LeastPrivilege", p.Element(Ns + "RunLevel")!.Value);
+        Assert.DoesNotContain("Password", doc.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Relative_command_is_rejected() =>
         Assert.Throws<ArgumentException>(() => LogonTaskXml.Build(Sid, "WslRemoteSetup.exe", "", ""));
 }

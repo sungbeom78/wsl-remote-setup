@@ -133,14 +133,21 @@ internal static class AgentCommand
 {
     public static async Task<int> RunAsync(Guid installationId, string distro, int? maxTicks = null)
     {
-        using var mutex = new Mutex(initiallyOwned: true, $"Local\\WslRemoteSetup.Agent.{installationId:N}", out var created);
-        if (!created)
+        // 한 인스턴스만: 세션(부팅 시 무인 실행 vs 로그인 후 실행)과 관계없이 같은 사용자 프로필의 잠금 파일로 막는다.
+        // (Global\ 이름 개체는 일반 권한으로 만들 수 없어 쓰지 않는다.)
+        var lockPath = Path.Combine(UserPaths.Root, "user-state", $"agent-{installationId:N}.lock");
+        Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
+        FileStream agentLock;
+        try { agentLock = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose); }
+        catch (IOException)
         {
             Console.Error.WriteLine("에이전트가 이미 실행 중입니다(한 인스턴스만 허용).");
             return App.ExitOk;
         }
+        using var _ = agentLock;
 
         var log = new FileAgentLog();
+        log.Info($"실행 세션 {System.Diagnostics.Process.GetCurrentProcess().SessionId}{(Environment.UserInteractive ? "" : " (비대화형)")}");
         using var keeper = new KeeperAdapter(distro);
         var loop = new AgentLoop(
             keeper,

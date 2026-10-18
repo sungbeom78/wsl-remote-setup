@@ -427,3 +427,13 @@
 | 설치·되돌리기 연동 | 빌드 PASS | 설치: DHCP일 때만 [y/N] 제안. 되돌리기: 이 도구가 고정한 경우에만 [y/N] 해제 |
 | 실기 적용·자동 원복 | NOT_TESTED | DHCP를 쓰는 PC가 필요(M7) |
 | 단위 / 통합 | PASS | 260 / 25 |
+
+## 2026-10-18 — 로그인 전 무인 실행 POC 준비 (코드 단계, 시스템 변경 없음)
+
+| 항목 | 결과 | 비고 |
+|---|---|---|
+| 부팅 작업 XML | PASS(단위) | BootTrigger(+30초), 소유자 SID, LogonType **S4U**(암호 저장 안 함), LeastPrivilege, 비밀번호 요소 없음 |
+| 에이전트 중복 방지 | 코드 반영 | 세션별 Local 뮤텍스를 사용자 프로필 잠금 파일로 바꿈. 부팅 세션과 로그인 세션에서 에이전트가 하나만 돌게 함. 로그에 실행 세션 번호를 남김 |
+| POC 명령 | 빌드 PASS | `autostart boot-poc-create` / `boot-poc-remove`(관리자, [Y/n]). scheduled-task로 기록해 되돌리기 2단계에도 포함 |
+| publish | PASS | SHA-256 `825a198d…c9c752c` |
+| 실기 POC | PENDING | 승인 대기: 수정본 재설치 → POC 작업 등록 → 재부팅 → **로그인하지 않은 상태에서** 다른 PC로 SSH 시험 |
