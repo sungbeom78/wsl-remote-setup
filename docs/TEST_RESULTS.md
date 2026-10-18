@@ -206,3 +206,19 @@
 | 공개키 인증 | NOT_TESTED | 아직 키를 등록하지 않음 |
 | 관찰 | 기록 | 커널 6.18.54.1-microsoft-standard-WSL2(이전 6.18.40.1 — WSL 자동 업데이트). eth0 주소는 172.24.220.111로 변화 없음 |
 | 확인할 것 | PENDING | SSH 세션만 있고 wsl.exe 클라이언트(keeper)가 없을 때 배포판이 유지되는지. M5 수명 설계에 반영한다 |
+
+## 2026-10-18 13:45 — 공개키 등록 (사용자 승인·사용자 제공 공개키)
+
+- 키: 클라이언트 `laptop-1`, ED25519 `SHA256:rLsuV2GOHCsNqErpHrCv3cIM+P+WdqPj8PrhG9W5Zko`
+  - 사용자가 공개키 한 줄만 제공했다. 개인키는 받지 않았다.
+- 명령: `add-authorized-key.sh --installation-id 5f3c9a10-…`. linux_admin으로 실행했고 sudo는 쓰지 않았다.
+
+| 항목 | 결과 | 실제값 |
+|---|---|---|
+| 거부 테스트(사전) | PASS | 개인키 표지, `command=` 옵션 줄, ssh-dss, 본문 손상 키를 모두 거부함 |
+| PS 5.1 파이프 BOM | 결함 → 수정 | stdin 앞에 BOM이 붙어 키 형식 판별이 실패하던 문제. 스크립트에서 BOM을 제거하도록 고침 |
+| 등록 | PASS | authorized_keys 유효 줄 0 → 1. 권한은 `~/.ssh` 700, `authorized_keys` 600 |
+| 중복 방지(T07) | PASS | 같은 키로 다시 실행하면 "이미 등록됨"으로 끝나고 추가하지 않음 |
+| 추가 기록 | PASS | `~/.local/share/wsl-remote-setup/added-keys`에 지문과 설치 ID를 남김 |
+| 포워딩 유지 | PASS | WSL eth0 172.24.220.111로 변화 없음. 1004 경유 배너 정상 |
+| 외부 공개키 로그인 | NOT_TESTED | 사용자 확인 대기 |
