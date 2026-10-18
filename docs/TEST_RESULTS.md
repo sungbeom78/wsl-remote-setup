@@ -168,4 +168,27 @@
 | `ssh-keyscan.exe`(Windows OpenSSH 9.5p1) | FAIL → 대체 | `choose_kex: unsupported KEX method sntrup761x25519-sha512`. `ssh.exe -v`(KEX·host key 알고리즘 지정, 인증 none)로 지문을 읽도록 바꿈 |
 | 1차 plan | 올바르게 차단 | host key를 읽지 못해 적용 불가로 판정 |
 | 관찰 | 기록 | 클라이언트가 없으면 배포판이 약 16초 뒤 종료되어 sshd도 종료됨(journal: signal 15). 그 동안 연결이 거부됨. LAN 접속에는 keeper(M5)가 필요함 |
-| 2차 plan(배포판 유지 중) | PASS | 192.168.1.222:1004 → 172.24.220.111:22, ED25519 지문 일치, 방화벽 Private·192.168.1.0/24, 차단 사유 없음 |
+| 2차 plan(배포판 유지 중) | PASS (아래 apply로 이어짐) | 192.168.1.222:1004 → 172.24.220.111:22, ED25519 지문 일치, 방화벽 Private·192.168.1.0/24, 차단 사유 없음 |
+
+## 2026-10-18 — M4 forward apply (시스템 변경, 사용자 승인)
+
+- 실행 주체: ownerAdmin, UAC 승격 PowerShell 5.1 창. 사용자가 계획을 확인하고 `Y`를 입력했다.
+- 로그: `.local/logs/M4_forward_apply_*.log`
+- 과정
+  - 1차 시도: 한글 확인어 `적용`이 CP949/UTF-8 불일치로 깨져 취소됨(exit 3, 변경 없음). ADR 0004에 따라 `[Y/n]`으로 수정했다.
+  - UAC 취소 2회: 변경 없음을 매번 확인했다.
+- 배포판 유지: 적용하는 동안 일반 세션에서 keeper(`--exec /bin/sleep`)를 보유했다.
+
+| 항목 | 결과 | 실제값 |
+|---|---|---|
+| portproxy | PASS | `192.168.1.222:1004 → 172.24.220.111:22` (다른 tuple 없음) |
+| 방화벽 규칙 | PASS | `WslRemoteSetup SSH 1004 (5f3c9a10)` Inbound Allow TCP 1004, Local 192.168.1.222, Remote 192.168.1.0/255.255.255.0, Private, Group WslRemoteSetup |
+| 수신 | PASS | 192.168.1.222:1004 (iphlpsvc) |
+| 경유 SSH 배너(G2 자신) | PASS | `SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.20` |
+| 경유 host key | PASS | ED25519 `SHA256:qjDdYL7ZZ9YgGsiu6CQ9etjth6qZm4SDvHVUPU3MsR8` |
+| 보존 확인 | PASS | 192.168.1.222/24 Manual, GW 192.168.1.1, DNS 8.8.8.8, RDP 7389 리스너 유지 |
+| 상태 폴더 ACL | PASS | SYSTEM·Administrators FullControl, Users ReadAndExecute. 일반 사용자 쓰기 거부 확인 |
+| 상태 파일 | PASS (결함 1) | 소유 리소스 2건, before 스냅샷, 승인 기록, Phase AwaitingAuthenticationSetup. OwnerSid·DistroName 누락 → 코드 수정(다음 apply부터 반영) |
+| T20 G2 자체 TCP 검사 | PASS | 외부 인증은 아래 항목으로 따로 기록 |
+| T21 다른 LAN PC 실제 SSH 인증 | NOT_TESTED | |
+| T11 WSL 재시작 후 주소 변경 | PENDING | 자동 갱신은 M5. 그 전에는 `forward apply`를 다시 실행해야 함 |

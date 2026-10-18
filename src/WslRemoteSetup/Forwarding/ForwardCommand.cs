@@ -151,6 +151,8 @@ internal static class ForwardCommand
             store.Save(state with
             {
                 Phase = InstallPhase.Verifying,
+                OwnerSid = id.User!.Value,
+                DistroName = o.Distro,
                 ResourceOwnership = resources,
                 BeforeSnapshots = before,
                 ApprovalHistory = [.. state.ApprovalHistory, new ApprovalRecord(now, id.User!.Value, PlanHash(plan), ["portproxy", "firewall-ssh"])],
