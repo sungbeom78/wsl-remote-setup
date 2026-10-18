@@ -27,8 +27,6 @@ internal sealed record ForwardOptions(
 [SupportedOSPlatform("windows")]
 internal static class ForwardCommand
 {
-    private const string ConfirmWord = "적용";
-
     public static async Task<int> RunAsync(ForwardOptions o)
     {
         return o.Action switch
@@ -115,7 +113,7 @@ internal static class ForwardCommand
             Console.WriteLine("변경할 항목이 없습니다. 검증만 수행합니다.");
             return await VerifyAsync(runner, facts) ? App.ExitOk : App.ExitChecksFailed;
         }
-        if (!Confirm()) return App.ExitUserInputRequired;
+        if (!Confirm(out var confirmExit)) return confirmExit;
 
         WindowsForwarding.EnsureProtectedStateDirectory();
         var now = DateTimeOffset.UtcNow;
@@ -246,7 +244,7 @@ internal static class ForwardCommand
 
         Console.WriteLine("제거 대상(이 도구가 만든 리소스만):");
         foreach (var r in owned) Console.WriteLine($"  {r.Kind}: {r.Key} {r.Value}");
-        if (!Confirm()) return App.ExitUserInputRequired;
+        if (!Confirm(out var confirmExit)) return confirmExit;
 
         var runner = WindowsForwarding.Runner();
         var snapshot = await new WindowsProbe(runner).CollectAsync();
@@ -286,18 +284,35 @@ internal static class ForwardCommand
         return failed ? App.ExitChecksFailed : App.ExitOk;
     }
 
-    private static bool Confirm()
+    private static bool Confirm(out int exitCode)
     {
+        exitCode = App.ExitOk;
         if (Console.IsInputRedirected)
         {
             Console.Error.WriteLine("[UserInputRequired] 적용 확인 입력을 받을 수 없습니다.");
+            exitCode = App.ExitUserInputRequired;
             return false;
         }
         Console.WriteLine();
-        Console.Write($"위 변경을 진행하려면 '{ConfirmWord}'를 입력하세요(그 외 입력은 취소): ");
-        var ok = string.Equals(Console.ReadLine()?.Trim(), ConfirmWord, StringComparison.Ordinal);
-        if (!ok) Console.WriteLine("취소했습니다. 변경하지 않았습니다.");
-        return ok;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            Console.Write($"위 변경을 진행할까요? {Confirmation.Prompt} ");
+            switch (Confirmation.Parse(Console.ReadLine()))
+            {
+                case ConfirmAnswer.Yes:
+                    return true;
+                case ConfirmAnswer.No:
+                    Console.WriteLine("취소했습니다. 변경하지 않았습니다.");
+                    exitCode = App.ExitCanceled;
+                    return false;
+                default:
+                    Console.WriteLine("Y 또는 n으로 입력하세요(Enter = Y).");
+                    break;
+            }
+        }
+        Console.WriteLine("확인 입력이 올바르지 않아 취소했습니다. 변경하지 않았습니다.");
+        exitCode = App.ExitCanceled;
+        return false;
     }
 
     private static void PrintPlan(ForwardingPlan plan, ForwardingFacts f)

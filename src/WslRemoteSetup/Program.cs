@@ -21,6 +21,7 @@ internal static class App
     public const int ExitUsage = 2;
     public const int ExitUserInputRequired = 3;
     public const int ExitError = 4;
+    public const int ExitCanceled = 5;
 
     private static string Version =>
         typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
