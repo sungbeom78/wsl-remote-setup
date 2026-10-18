@@ -157,7 +157,7 @@ internal static class App
         var snapshot = await CollectAsync();
         var plan = Planner.Create(snapshot, desired, DateTimeOffset.Now);
         Console.WriteLine();
-        Console.WriteLine($"설치 계획 — 소유 계정 {desired.OwnerAccountName ?? "(현재 사용자)"}, 배포판 {desired.DistroName}, Linux {desired.LinuxUser}, 수신 TCP {desired.ListenPort} → WSL {desired.WslSshPort}");
+        Console.WriteLine($"설치 계획 — 소유 계정 {desired.OwnerAccountName ?? "(현재 사용자)"}, 배포판 {desired.DistroName}, Linux {desired.LinuxUser}, 수신 TCP {desired.ListenPort} → WSL {desired.WslSshPort}, SSH 인증 {(desired.SshAuth == SshAuthentication.PublicKeyOnly ? "공개키만" : "비밀번호+공개키")}");
         Console.WriteLine("이 명령은 시스템을 변경하지 않습니다.");
         Console.WriteLine();
         ConsoleReport.PrintPlan(plan);
@@ -227,6 +227,7 @@ internal static class App
               --distro <이름>           배포판 (기본: {DesiredConfiguration.DefaultDistro})
               --linux-user <이름>       Linux 사용자 (기본: {DesiredConfiguration.DefaultLinuxUser})
               --port <번호>             Windows SSH 수신 포트 (기본: {DesiredConfiguration.DefaultListenPort})
+              --ssh-auth password|key-only  SSH 로그인 방식 (기본: password = 비밀번호+공개키)
               --json <파일>             doctor 결과를 JSON으로 저장
 
             install/resume/repair/pause/resume-monitoring/uninstall은 이후 버전에서 제공됩니다.
@@ -262,6 +263,7 @@ internal sealed record Options
     public string? Listen { get; init; }
     public string? WslIp { get; init; }
     public string? HostKey { get; init; }
+    public SshAuthentication? SshAuth { get; init; }
     public string? Error { get; init; }
 
     public static Options Parse(string[] args)
@@ -295,6 +297,11 @@ internal sealed record Options
                     if (!InputValidator.TryParseIPv4(value, out _)) return o with { Error = "--wsl-ip는 IPv4여야 합니다." };
                     o = o with { WslIp = value };
                     break;
+                case "--ssh-auth":
+                    SshAuthentication? mode = value switch { "password" => SshAuthentication.PasswordAndPublicKey, "key-only" => SshAuthentication.PublicKeyOnly, _ => null };
+                    if (mode is null) return o with { Error = "--ssh-auth는 password 또는 key-only입니다." };
+                    o = o with { SshAuth = mode };
+                    break;
                 case "--host-key":
                     if (!WslRemoteSetup.Core.Ssh.HostKeyFingerprint.IsWellFormed(value)) return o with { Error = "--host-key는 SHA256:… 형식이어야 합니다." };
                     o = o with { HostKey = value };
@@ -315,5 +322,6 @@ internal sealed record Options
         DistroName = Distro ?? DesiredConfiguration.DefaultDistro,
         LinuxUser = LinuxUser ?? DesiredConfiguration.DefaultLinuxUser,
         ListenPort = Port ?? DesiredConfiguration.DefaultListenPort,
+        SshAuth = SshAuth ?? SshAuthentication.PasswordAndPublicKey,
     };
 }

@@ -10,7 +10,7 @@
 | M1 WSL·Ubuntu·개발 도구 | **완료** | B3 WSL2 PASS, B4 Ubuntu-24.04/linux_admin PASS, B5 Git 2.55 + .NET SDK 10.0.402 PASS |
 | M2 솔루션·doctor·plan·상태·단위 테스트 | **완료** | 빌드 경고 0, 단위 테스트 88/88 통과, G2 실기 doctor/plan/status 확인 |
 | M3 권한 분리·WSL 수명 POC | **진행 중** | 코드·테스트 완료(단위 135, 통합 5 통과). WSL 수명 실기 POC PASS(keeper 방식). 서비스 컨텍스트·일반 계정 POC는 승인 대기 |
-| M4 SSH·포워딩·방화벽 | **진행 중** | WSL OpenSSH(사용자 sudo) PASS, `forward apply`(portproxy 1004→22, LAN 한정 규칙) G2 로컬 검증 PASS. 다른 LAN PC 인증, 공개키 등록, 비밀번호 로그인 해제가 남음. Windows 계정·RDP는 기존 값을 유지하므로 변경 없음 |
+| M4 SSH·포워딩·방화벽 | **진행 중** | WSL OpenSSH(사용자 sudo) PASS, `forward apply`(portproxy 1004→22, LAN 한정 규칙) G2 로컬 검증 PASS. 다른 LAN PC 비밀번호·공개키 인증 PASS. 비밀번호 로그인은 사용자 결정으로 유지(ADR 0005), 제품에는 `--ssh-auth` 선택 옵션. Windows 계정·RDP는 기존 값을 유지하므로 변경 없음 |
 | M5~M7 | 대기 | M5: keeper·자동 갱신·pause·서비스 모드 |
 
 ## 보존 대상 (변경 금지)

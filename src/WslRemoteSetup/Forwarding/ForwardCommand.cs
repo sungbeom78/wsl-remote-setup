@@ -164,7 +164,7 @@ internal static class ForwardCommand
         store.Save(latest with
         {
             Phase = ok ? InstallPhase.AwaitingAuthenticationSetup : InstallPhase.Failed,
-            PendingAction = ok ? "다른 LAN PC에서 실제 SSH 인증 확인 후 공개키 등록·비밀번호 로그인 해제" : null,
+            PendingAction = ok ? "다른 LAN PC에서 실제 SSH 인증 확인(공개키 전용을 선택한 경우 공개키 확인 후 비밀번호 해제)" : null,
             LastError = ok ? null : "포워딩 사후 검증 실패",
             VerificationResults = [.. latest.VerificationResults, new VerificationRecord("forward-local", ok ? "PASS" : "FAIL", key, DateTimeOffset.UtcNow)],
         });

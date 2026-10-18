@@ -234,3 +234,11 @@
 | 서버 로그 | PASS | `Accepted publickey for linux_admin from 172.24.208.1 … ED25519 SHA256:rLsuV2GOHCsNqErpHrCv3cIM+P+WdqPj8PrhG9W5Zko` |
 | 관찰: 접속 출발지 주소 | 기록 | portproxy를 거치면 sshd에 보이는 출발지가 항상 172.24.208.1(WSL 호스트)이다. 출발지 IP 제한은 sshd가 아니라 Windows 방화벽(192.168.1.0/24)에서 한다 |
 | 관찰: host key 확인 부작용 | 기록 | 지문 확인용 접속이 sshd 로그에 `Invalid user wrs-hostkey-probe`로 남는다. 의도된 동작이며 인증은 시도하지 않는다 |
+
+## 2026-10-18 — SSH 인증 방식 결정 (사용자)
+
+| 항목 | 결과 | 비고 |
+|---|---|---|
+| G2 비밀번호 로그인 해제 | NOT_APPLICABLE | 사용자 결정에 따라 유지(mRemoteNG 사용). `disable-password-auth.sh`는 실행하지 않음 |
+| 제품 선택 옵션 `--ssh-auth password|key-only` | PASS(단위·CLI) | 단위 172 / 통합 5. key-only를 고르면 `ssh-key-only` 단계가 추가되고, 잘못된 값은 exit 2 |
+| `install-openssh.sh --password-auth` | 구문 PASS | 실기 재실행은 하지 않음(G2는 이미 yes로 구성됨) |

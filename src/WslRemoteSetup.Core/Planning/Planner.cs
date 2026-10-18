@@ -88,7 +88,7 @@ public static class Planner
             Id = "ssh-server",
             Title = "WSL OpenSSH 서버",
             Current = "doctor는 배포판을 깨우지 않으므로 미확인",
-            Target = $"openssh-server, TCP {d.WslSshPort}, root 로그인 금지, {d.LinuxUser}만 허용, 설정 sshd -t/-T 검증",
+            Target = $"openssh-server, TCP {d.WslSshPort}, root 로그인 금지, {d.LinuxUser}만 허용, 공개키 사용, 비밀번호 로그인 허용(설치 시점), 설정 sshd -t/-T 검증",
             Change = ChangeNeed.Unknown,
             Executor = StepExecutor.OwnerSession,
             RequiresApproval = true,
@@ -96,6 +96,24 @@ public static class Planner
             Revert = Reversibility.ToolCanRevert,
             NotImplementedNote = "M4",
         });
+
+        if (d.SshAuth == SshAuthentication.PublicKeyOnly)
+        {
+            // 유일한 로그인 수단을 먼저 없애지 않도록 공개키 등록·외부 로그인 확인 뒤에 둔다(FR-04).
+            steps.Add(new PlanStep
+            {
+                Id = "ssh-key-only",
+                Title = "SSH 비밀번호 로그인 해제(공개키만)",
+                Current = "비밀번호 + 공개키",
+                Target = "공개키만 허용. 등록한 키로 외부 클라이언트 로그인을 확인한 뒤 적용",
+                Change = ChangeNeed.Required,
+                Executor = StepExecutor.Person,
+                RequiresApproval = true,
+                DependsOn = ["ssh-server"],
+                Revert = Reversibility.ToolCanRevert,
+                NotImplementedNote = "공개키 등록 → 외부 공개키 로그인 확인(AwaitingAuthenticationSetup) → 사용자가 sudo로 적용",
+            });
+        }
 
         var listenPortBusy = s.TcpListenPorts?.Contains(d.ListenPort) == true
             || s.PortProxies?.Any(p => p.ListenPort == d.ListenPort) == true;

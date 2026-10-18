@@ -1,7 +1,8 @@
 #!/bin/bash
 # WslRemoteSetup — WSL OpenSSH 서버 설치·설정 (M4 / FR-04)
 #
-# 사용: sudo bash install-openssh.sh --user <linux_user> --installation-id <guid>
+# 사용: sudo bash install-openssh.sh --user <linux_user> --installation-id <guid> [--password-auth yes|no]
+#   --password-auth 기본 yes(비밀번호+공개키). no(공개키만)는 사용자 authorized_keys에 키가 있을 때만 허용(ADR 0005).
 #
 # 하는 일
 #   1. openssh-server 설치(이미 있으면 유지)
@@ -23,11 +24,12 @@ STATE="$STATE_DIR/ssh.json"
 die() { echo "[FAIL] $*" >&2; exit 1; }
 step() { echo; echo "== $*"; }
 
-USER_NAME=""; INSTALL_ID=""
+USER_NAME=""; INSTALL_ID=""; PASSWORD_AUTH="yes"
 while [ $# -gt 0 ]; do
   case "$1" in
     --user) USER_NAME="${2:-}"; shift 2 ;;
     --installation-id) INSTALL_ID="${2:-}"; shift 2 ;;
+    --password-auth) PASSWORD_AUTH="${2:-}"; shift 2 ;;
     *) die "알 수 없는 인수: $1" ;;
   esac
 done
@@ -37,6 +39,11 @@ done
 [ "$USER_NAME" != "root" ] || die "root는 허용 사용자로 지정할 수 없습니다."
 id "$USER_NAME" >/dev/null 2>&1 || die "Linux 사용자 $USER_NAME 없음"
 [[ "$INSTALL_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || die "installation-id 형식 오류"
+case "$PASSWORD_AUTH" in yes|no) ;; *) die "--password-auth는 yes 또는 no" ;; esac
+if [ "$PASSWORD_AUTH" = no ]; then
+  AK="$(getent passwd "$USER_NAME" | cut -d: -f6)/.ssh/authorized_keys"
+  [ -f "$AK" ] && ssh-keygen -lf "$AK" >/dev/null 2>&1 || die "공개키 전용은 $AK에 유효한 키가 있어야 합니다. 유일한 로그인 수단을 없애지 않습니다."
+fi
 
 step "1. openssh-server"
 PREINSTALLED=false
@@ -68,8 +75,8 @@ $MARKER (installationId $INSTALL_ID). 직접 수정하지 마세요.
 PermitRootLogin no
 AllowUsers $USER_NAME
 PubkeyAuthentication yes
-# 공개키 인증을 외부 클라이언트에서 확인하기 전까지 유일한 로그인 수단을 막지 않는다(FR-04).
-PasswordAuthentication yes
+# 비밀번호 로그인: 사용자 선택(--password-auth). 공개키 전용은 키 등록·외부 확인 후에만(FR-04, ADR 0005).
+PasswordAuthentication $PASSWORD_AUTH
 KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 MaxAuthTries 4
@@ -90,7 +97,7 @@ check() { echo "$EFFECTIVE" | grep -qx "$1" || { restore; die "유효값 불일�
 check "permitrootlogin no"
 check "allowusers $USER_NAME"
 check "pubkeyauthentication yes"
-check "passwordauthentication yes"
+check "passwordauthentication $PASSWORD_AUTH"
 check "permitemptypasswords no"
 check "port 22"
 [ -n "$BACKUP" ] && rm -f "$BACKUP"
@@ -121,7 +128,7 @@ cat > "$STATE.tmp" <<EOF
   "ownedFiles": ["$DROPIN"],
   "unit": "$UNIT",
   "allowUsers": ["$USER_NAME"],
-  "passwordAuthentication": true,
+  "passwordAuthentication": $( [ "$PASSWORD_AUTH" = yes ] && echo true || echo false ),
   "hostKeyFingerprints": [${FPS%,}],
   "updatedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }

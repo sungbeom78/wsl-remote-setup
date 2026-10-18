@@ -88,6 +88,27 @@ public class PlannerTests
     }
 
     [Fact]
+    public void Password_mode_is_default_and_has_no_key_only_step()
+    {
+        Assert.Equal(SshAuthentication.PasswordAndPublicKey, new DesiredConfiguration().SshAuth);
+        var plan = Planner.Create(Fixtures.G2AfterBootstrap(), new DesiredConfiguration(), Now);
+        Assert.DoesNotContain(plan.Steps, s => s.Id == "ssh-key-only");
+    }
+
+    [Fact]
+    public void Key_only_mode_adds_step_after_ssh_server_and_changes_hash()
+    {
+        var keyOnly = Planner.Create(Fixtures.G2AfterBootstrap(), new DesiredConfiguration { SshAuth = SshAuthentication.PublicKeyOnly }, Now);
+        var step = Step(keyOnly, "ssh-key-only");
+        Assert.Equal(["ssh-server"], step.DependsOn);
+        Assert.True(step.RequiresApproval);
+        Assert.Equal(StepExecutor.Person, step.Executor);
+        var ids = keyOnly.Steps.Select(s => s.Id).ToList();
+        Assert.True(ids.IndexOf("ssh-key-only") > ids.IndexOf("ssh-server"));
+        Assert.NotEqual(Planner.Create(Fixtures.G2AfterBootstrap(), new DesiredConfiguration(), Now).ComputeHash(), keyOnly.ComputeHash());
+    }
+
+    [Fact]
     public void Invalid_desired_configuration_is_rejected()
     {
         Assert.Throws<ArgumentException>(() =>
