@@ -296,3 +296,11 @@
 | `resume-monitoring` | PASS | 31초 뒤 keeper 재시작, 관리부 응답 `NoChange`, 1004 경유 배너 정상 |
 | T11 실제 주소 변경 | NOT_TESTED | 재기동 후에도 WSL 주소가 172.24.220.111로 같았다(NAT 대역 유지). 주소 변경 자동 갱신은 단위 테스트로만 확인 |
 | 화면 문구 | 수정 | pause/resume 안내의 "keeper" 표현을 쉬운 말로 바꿈(다음 설치 때 반영) |
+
+## 2026-10-18 — T15 재부팅 시험 준비 (사용자 승인)
+
+- 재부팅 전 기준값: LastBoot 2026-10-17 21:57:55, 서비스 Running/Auto, 로그온 작업 Running, portproxy 192.168.1.222:1004 → 172.24.220.111:22, 에이전트 paused=false·keeper=true·NoChange
+- 세션: ownerAdmin RDP 1개. 다른 사용자 세션은 없음
+- 기대 결과
+  - 부팅 직후, 로그인 전: 서비스는 Running이고 WSL은 꺼져 있다. 1004로 SSH 응답이 없다(1.0 한계, NOT_APPLICABLE).
+  - ownerAdmin이 RDP로 로그인하고 약 15초 뒤: 로그온 작업이 에이전트를 시작하고, keeper가 WSL을 켜고, 포워딩 확인 결과가 나오고, 1004로 SSH 응답이 온다.
