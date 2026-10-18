@@ -80,7 +80,8 @@ internal static class StatusCommand
         var service = QueryService(out var serviceRaw);
         h.Detail("서비스", serviceRaw);
 
-        var taskName = state.ResourceOwnership.FirstOrDefault(r => r.Kind == "scheduled-task")?.Key;
+        var preLoginName = AutostartCommand.PreLoginTaskName(state.InstallationId);
+        var taskName = state.ResourceOwnership.FirstOrDefault(r => r.Kind == "scheduled-task" && r.Key != preLoginName)?.Key;
         bool? task = null;
         if (taskName is null) task = false;
         else
@@ -88,6 +89,13 @@ internal static class StatusCommand
             var q = await runner.RunAsync(new CommandSpec(Schtasks, ["/Query", "/TN", taskName]) { Timeout = TimeSpan.FromSeconds(20) });
             task = q.ExitedZero;
             h.Detail("로그온 작업", $"{taskName} exit={q.ExitCode}");
+        }
+        bool? preLogin = false;
+        if (state.ResourceOwnership.Any(r => r.Kind == "scheduled-task" && r.Key == preLoginName))
+        {
+            var q = await runner.RunAsync(new CommandSpec(Schtasks, ["/Query", "/TN", preLoginName]) { Timeout = TimeSpan.FromSeconds(20) });
+            preLogin = q.ExitedZero;
+            h.Detail("로그인 전 작업", $"{preLoginName} exit={q.ExitCode}");
         }
 
         var isOwner = owner is null || string.Equals(owner, current, StringComparison.OrdinalIgnoreCase);
@@ -163,6 +171,7 @@ internal static class StatusCommand
             ListenPort = port,
             Service = service,
             TaskRegistered = task,
+            PreLogin = preLogin,
             AgentRunning = agentRunning,
             Paused = paused,
             AgentLastCheck = lastCheck,

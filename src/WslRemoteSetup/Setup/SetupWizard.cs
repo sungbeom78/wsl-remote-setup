@@ -20,7 +20,8 @@ internal sealed record SetupChoices(
     SshAuthentication SshAuth,
     string Distro,
     DateTimeOffset ChosenAt,
-    IReadOnlyList<ServiceForward>? Services = null);
+    IReadOnlyList<ServiceForward>? Services = null,
+    bool PreLogin = false);
 
 /// <summary>
 /// 설치 질문(Enter = 기본값). 포트·계정·Linux 사용자·로그인 방식만 묻고, IP·LAN 범위·RDP 포트는 PC 설정을 그대로 쓴다.
@@ -160,7 +161,19 @@ internal static class SetupWizard
                 Console.WriteLine($"     추가: {name} — 외부 {extPort}번 → WSL {wslPort}번");
             }
         }
-        var choices = new SetupChoices(owner, linuxUser, port, auth, previous?.Distro ?? DesiredConfiguration.DefaultDistro, DateTimeOffset.Now, services);
+        // 6. (선택) 로그인 전 접속 — 기본 아니오. 이미 켜 둔 PC면 그 상태를 기본값으로 보여 준다.
+        var preLoginDefault = previous?.PreLogin ?? PreLoginEnabled();
+        Console.WriteLine();
+        Ui.Line("6. 이 PC를 켜기만 하고 로그인하지 않아도 접속할 수 있게 할까요?");
+        Ui.Line("   - 정전·업데이트로 다시 켜져도 로그인 없이 약 1분 뒤부터 접속됩니다.");
+        Ui.Line("   - 이 PC 앞에 앉아 로그인할 일이 적은 서버용 PC에 알맞습니다.");
+        Console.Write($"   선택 {(preLoginDefault ? Confirmation.Prompt : "[y/N]")} ");
+        var preInput = Console.ReadLine();
+        var preLogin = preLoginDefault
+            ? Confirmation.Parse(preInput) != ConfirmAnswer.No
+            : Confirmation.ParseDefaultNo(preInput) == ConfirmAnswer.Yes;
+
+        var choices = new SetupChoices(owner, linuxUser, port, auth, previous?.Distro ?? DesiredConfiguration.DefaultDistro, DateTimeOffset.Now, services, preLogin);
         UserPaths.WriteJsonAtomic(ChoicesFile, choices);
 
         Console.WriteLine();
@@ -168,8 +181,17 @@ internal static class SetupWizard
         Ui.Line($"  포트 {choices.ListenPort}번 · 계정 {choices.OwnerAccount} · Linux 사용자 {choices.LinuxUser} · " +
                 (choices.SshAuth == SshAuthentication.PublicKeyOnly ? "키로만 로그인" : "비밀번호 또는 키"));
         foreach (var x in services) Ui.Line($"  추가 포트: {x.Name} — 외부 {x.ListenPort}번 → WSL {x.ConnectPort}번");
+        Ui.Line(choices.PreLogin ? "  로그인 전 접속: 켬 (로그인하지 않아도 접속 가능)" : "  로그인 전 접속: 끔 (로그인해야 접속 가능)");
         Ui.Line("  이 PC의 IP 주소·공유기 범위·원격 데스크톱 포트는 지금 설정을 그대로 씁니다.");
         return choices;
+    }
+
+    /// <summary>이 도구가 로그인 전 접속 작업을 등록해 두었는지(보호 상태 파일 기준, 읽기 전용).</summary>
+    public static bool PreLoginEnabled()
+    {
+        var state = new StateStore(ProtectedPaths.StateFile).Load().State;
+        return state is not null && state.ResourceOwnership.Any(r =>
+            r.Kind == "scheduled-task" && r.Key == AutostartCommand.PreLoginTaskName(state.InstallationId));
     }
 
     public static DesiredConfiguration ToDesired(SetupChoices c) => new()

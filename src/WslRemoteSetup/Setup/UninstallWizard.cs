@@ -66,7 +66,9 @@ internal static class UninstallWizard
         var hasAuto = state?.ResourceOwnership.Any(r => r.Kind is "scheduled-task" or "service" or "policy") == true;
         if (!hasAuto) Ui.Line("✔ 이 도구가 등록한 자동 실행이 없습니다.");
         else if (Ask("로그인 시 자동 실행과 백그라운드 연결 관리 프로그램을 지웁니다.",
-                     ["WSL이 더 이상 자동으로 켜지지 않고, 연결 점검도 멈춥니다.",
+                     [SetupWizard.PreLoginEnabled()
+                          ? "WSL이 더 이상 자동으로 켜지지 않고, 연결 점검도 멈춥니다. 로그인 전 접속도 꺼집니다."
+                          : "WSL이 더 이상 자동으로 켜지지 않고, 연결 점검도 멈춥니다.",
                       "설치된 프로그램 파일은 지우지 않습니다.",
                       "관리자 창에서 한 번 더 확인합니다."], defaultYes: true))
         {

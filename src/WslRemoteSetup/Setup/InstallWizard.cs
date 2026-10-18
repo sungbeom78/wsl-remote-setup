@@ -232,10 +232,13 @@ internal static class InstallWizard
         Impact("이 PC를 켜고 로그인하면 WSL과 연결을 자동으로 관리하게 합니다(관리자 권한).",
             ["백그라운드 연결 관리 프로그램을 등록합니다(컴퓨터를 켜면 자동 시작).",
              $"{choices.OwnerAccount}으로 로그인하면 WSL을 켜 두고 1분마다 연결을 점검합니다.",
-             "프로그램을 C:\\Program Files\\WslRemoteSetup에 설치합니다."]);
+             "프로그램을 C:\\Program Files\\WslRemoteSetup에 설치합니다.",
+             choices.PreLogin
+                 ? "로그인 전 접속을 켭니다: 컴퓨터를 켜기만 해도 약 1분 뒤부터 접속할 수 있습니다."
+                 : "로그인 전 접속은 끕니다: 컴퓨터를 켠 뒤 로그인해야 접속할 수 있습니다."]);
         if (!Confirm()) return Stop(history, "자동 실행 설정을 취소함");
         history.Begin("자동 실행(관리자)");
-        var ar = Elevation.RunSelfElevated("autostart", "install", "--distro", choices.Distro, "--pause-at-end");
+        var ar = Elevation.RunSelfElevated("autostart", "install", "--distro", choices.Distro, "--prelogin", choices.PreLogin ? "on" : "off", "--pause-at-end");
         if (!ar.Started) return Stop(history, ar.Error!);
         if (ar.ExitCode != App.ExitOk) return Stop(history, "자동 실행을 설정하지 못했거나 취소되었습니다.");
         history.Done("완료");

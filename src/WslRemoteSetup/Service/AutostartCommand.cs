@@ -16,7 +16,8 @@ using WslRemoteSetup.Reporting;
 
 namespace WslRemoteSetup.Service;
 
-internal sealed record AutostartOptions(string Action, Guid? InstallationId, string? HostKey, string Distro);
+/// <param name="PreLogin">install과 함께 로그인 전 접속을 켤지(true)/끌지(false). null이면 건드리지 않는다.</param>
+internal sealed record AutostartOptions(string Action, Guid? InstallationId, string? HostKey, string Distro, bool? PreLogin = null);
 
 /// <summary>
 /// `autostart plan|install|remove` (M5): 보호 경로 설치, 관리자 정책, 네트워크 관리부 서비스, 소유자 로그온 작업.
@@ -41,16 +42,25 @@ internal static class AutostartCommand
     public static async Task<int> RunAsync(AutostartOptions o) => o.Action switch
     {
         "plan" => await PlanOrInstallAsync(o, install: false),
-        "install" => await PlanOrInstallAsync(o, install: true),
+        "install" => await InstallWithPreLoginAsync(o),
         "remove" => await RemoveAsync(o),
-        "boot-poc-create" => await BootPocAsync(create: true),
-        "boot-poc-remove" => await BootPocAsync(create: false),
+        // boot-poc-*는 시험 때 쓰던 이름(호환용)
+        "prelogin-on" or "boot-poc-create" => await PreLoginAsync(enable: true, confirm: true),
+        "prelogin-off" or "boot-poc-remove" => await PreLoginAsync(enable: false, confirm: true),
         _ => Usage(),
     };
 
+    private static async Task<int> InstallWithPreLoginAsync(AutostartOptions o)
+    {
+        var code = await PlanOrInstallAsync(o, install: true);
+        if (code != App.ExitOk || o.PreLogin is not { } enable) return code;
+        // 설치 마법사에서 이미 [Y/n]으로 고른 값이므로 다시 묻지 않는다.
+        return await PreLoginAsync(enable, confirm: false);
+    }
+
     private static int Usage()
     {
-        Console.Error.WriteLine("사용: autostart plan | autostart install | autostart remove   (install/remove는 관리자 창에서)");
+        Console.Error.WriteLine("사용: autostart plan | install [--prelogin on|off] | remove | prelogin-on | prelogin-off   (plan 외에는 관리자 창에서)");
         return App.ExitUsage;
     }
 
@@ -319,34 +329,45 @@ internal static class AutostartCommand
     }
 
     /// <summary>
-    /// 로그인 전 무인 실행 POC(후속 범위): 시스템 시작 시 소유자 S4U(암호 저장 안 함)로 에이전트를 실행하는 작업.
+    /// 로그인 전 접속(선택 기능, 기본 꺼짐): 시스템 시작 시 소유자 S4U(암호 저장 안 함)로 에이전트를 실행하는 작업.
     /// 로그인 후 작업과 동시에 돌아도 에이전트 잠금 파일로 하나만 동작한다. 기록은 scheduled-task로 남겨 제거 대상에 포함된다.
+    /// G2 실기: 부팅 47초 뒤 준비, 로그인 전 외부 LAN SSH 로그인 PASS(2026-10-18 22:00).
     /// </summary>
-    private static async Task<int> BootPocAsync(bool create)
+    public static string PreLoginTaskName(Guid installationId) => $@"\WslRemoteSetup\BootAgent-{installationId.ToString("N")[..8]}";
+
+    private static async Task<int> PreLoginAsync(bool enable, bool confirm)
     {
+        var create = enable;
         if (!WindowsForwarding.IsElevated()) { Console.Error.WriteLine("관리자 권한이 필요합니다. 관리자 창(UAC 승인)에서 다시 실행해 주세요."); return App.ExitUsage; }
         var store = new StateStore(ProtectedPaths.StateFile);
         var state = store.Load().State;
         if (state?.OwnerSid is null || !File.Exists(ProtectedPaths.InstalledExe)) { Ui.Blocked("자동 실행 설정(autostart install)이 먼저 필요합니다."); return App.ExitChecksFailed; }
-        var taskName = $@"\WslRemoteSetup\BootAgent-{state.InstallationId.ToString("N")[..8]}";
-        var history = Ui.OpenHistory(create ? "로그인 전 무인 실행 POC 등록" : "로그인 전 무인 실행 POC 제거");
+        var taskName = PreLoginTaskName(state.InstallationId);
+        var exists = state.ResourceOwnership.Any(r => r.Kind == "scheduled-task" && r.Key == taskName);
+        if (!create && !exists)
+        {
+            Ui.Item(1, "로그인 전 접속", "변경 없음", "꺼져 있습니다.");
+            return App.ExitOk;
+        }
+        var history = Ui.OpenHistory(create ? "로그인 전 접속 켜기" : "로그인 전 접속 끄기");
         var runner = Runner();
-        Ui.Title(create ? "로그인 전 무인 실행 시험 등록" : "로그인 전 무인 실행 시험 제거");
+        Ui.Title(create ? "로그인 전 접속 켜기" : "로그인 전 접속 끄기");
         if (create)
         {
-            Ui.Line("컴퓨터가 켜지면 로그인하지 않아도 WSL을 켜 두고 연결을 점검하는 작업을 시험으로 등록합니다.");
-            Ui.Line("  - 실행 계정: 설정한 계정(관리자 권한 없이), 비밀번호는 저장하지 않습니다(S4U 방식).");
+            Ui.Line("컴퓨터가 켜지면 로그인하지 않아도 약 1분 뒤부터 다른 기기에서 SSH로 접속할 수 있게 합니다.");
+            Ui.Line("  - 실행 계정: 설정한 계정(관리자 권한 없이). 비밀번호는 저장하지 않습니다.");
+            Ui.Line("  - 정전·업데이트로 재부팅되어도 로그인 없이 다시 접속할 수 있습니다.");
             Ui.Line("  - 로그인 후 자동 실행과 함께 있어도 하나만 동작합니다.");
-            Ui.Line("  - 시험이 끝나면 'autostart boot-poc-remove'로 지울 수 있습니다(되돌리기 2단계에도 포함).");
+            Ui.Line("  - 끄기: 'autostart prelogin-off' 또는 되돌리기 2단계.");
         }
-        else Ui.Line("시험용 부팅 작업을 지웁니다. 로그인 후 자동 실행은 그대로 둡니다.");
-        if (!ConfirmPrompt.Ask(out var code)) { history.Finish("취소"); return code; }
+        else Ui.Line("로그인 전 접속을 끕니다. 재부팅 후에는 로그인해야 접속할 수 있습니다. 로그인 후 자동 실행은 그대로 둡니다.");
+        if (confirm && !ConfirmPrompt.Ask(out var code)) { history.Finish("취소"); return code; }
 
         var resources = state.ResourceOwnership.ToList();
         if (create)
         {
             var args = $"--headless \"{ProtectedPaths.InstalledExe}\" agent --installation-id {state.InstallationId:D} --distro {state.DistroName ?? "Ubuntu-24.04"}";
-            var xml = LogonTaskXml.BuildBoot(state.OwnerSid, Conhost, args, $"WslRemoteSetup {state.InstallationId:D}: 로그인 전 무인 실행(POC)");
+            var xml = LogonTaskXml.BuildBoot(state.OwnerSid, Conhost, args, $"WslRemoteSetup {state.InstallationId:D}: 로그인 전 접속");
             var xmlPath = Path.Combine(ProtectedPaths.PolicyDirectory, "boot-task.xml");
             await File.WriteAllTextAsync(xmlPath, xml, Encoding.Unicode);
             history.Detail("작업", taskName);
@@ -354,8 +375,8 @@ internal static class AutostartCommand
             var r = await runner.RunAsync(new CommandSpec(Schtasks, ["/Create", "/TN", taskName, "/XML", xmlPath, "/F"]) { Timeout = TimeSpan.FromSeconds(30) });
             if (!r.ExitedZero) { Ui.Blocked($"등록 실패: {r.StandardOutput.Trim()} {r.StandardError.Trim()}"); history.Finish("실패"); return App.ExitChecksFailed; }
             resources.RemoveAll(x => x.Kind == "scheduled-task" && x.Key == taskName);
-            resources.Add(new OwnedResource("scheduled-task", taskName, "로그인 전 무인 실행(POC)", DateTimeOffset.UtcNow) { Value = state.OwnerSid });
-            Ui.Line("✔ 등록했습니다. 재부팅 후 로그인하기 전에 다른 PC에서 SSH 접속을 시험해 보세요.");
+            resources.Add(new OwnedResource("scheduled-task", taskName, "로그인 전 접속", DateTimeOffset.UtcNow) { Value = state.OwnerSid });
+            Ui.Line("✔ 켰습니다. 다음에 컴퓨터를 켜면 로그인하지 않아도 접속할 수 있습니다.");
         }
         else
         {
@@ -367,7 +388,7 @@ internal static class AutostartCommand
             var orphans = SessionZeroAgents();
             foreach (var pid in orphans)
             {
-                history.Note($"시험 작업이 남긴 에이전트 종료: PID {pid}");
+                history.Note($"로그인 전 작업이 남긴 에이전트 종료: PID {pid}");
                 try { System.Diagnostics.Process.GetProcessById(pid).Kill(entireProcessTree: true); } catch (ArgumentException) { } catch (InvalidOperationException) { }
             }
             if (orphans.Count > 0)
@@ -376,7 +397,7 @@ internal static class AutostartCommand
                 var run = await runner.RunAsync(new CommandSpec(Schtasks, ["/Run", "/TN", logonTask]) { Timeout = TimeSpan.FromSeconds(20) });
                 history.Detail("로그인 작업 재시작", $"{logonTask} exit={run.ExitCode}");
             }
-            Ui.Line("✔ 지웠습니다.");
+            Ui.Line("✔ 껐습니다.");
         }
         store.Save(state with { ResourceOwnership = resources });
         history.Finish("완료");
@@ -439,9 +460,12 @@ internal static class AutostartCommand
         }
     }
 
+    private static string Label(OwnedResource r) =>
+        r.Kind == "scheduled-task" && r.Key.Contains(@"\BootAgent-", StringComparison.Ordinal) ? "로그인 전 접속" : Plain(r.Kind);
+
     private static string LogonTaskName(Guid installationId) => $@"\WslRemoteSetup\Agent-{installationId.ToString("N")[..8]}";
 
-    /// <summary>세션 0에서 실행 중인 우리 설치 경로 에이전트(로그인 전 시험 작업이 남긴 것). 관리자 권한에서만 명령줄을 읽을 수 있다.</summary>
+    /// <summary>세션 0에서 실행 중인 우리 설치 경로 에이전트(로그인 전 작업이 남긴 것). 관리자 권한에서만 명령줄을 읽을 수 있다.</summary>
     private static List<int> SessionZeroAgents()
     {
         var list = new List<int>();
@@ -484,7 +508,7 @@ internal static class AutostartCommand
         Ui.Title("자동 실행 설정 제거");
         Ui.Line("이 도구가 만든 것만 지웁니다.");
         var n = 0;
-        foreach (var r in owned) Ui.Item(++n, Plain(r.Kind), "제거");
+        foreach (var r in owned) Ui.Item(++n, Label(r), "제거");
         Ui.Note("SSH 연결 통로와 방화벽 규칙은 그대로 둡니다(필요하면 'forward remove').");
         Ui.Note($"설치된 프로그램({ProtectedPaths.InstallDirectory})은 지우지 않습니다. 필요하면 직접 폴더를 지우면 됩니다.");
         foreach (var r in owned) history.Detail(r.Kind, r.Key);
@@ -496,7 +520,7 @@ internal static class AutostartCommand
         foreach (var r in owned.OrderBy(r => r.Kind switch { "scheduled-task" => 0, "service" => 1, "policy" => 2, _ => 3 }))
         {
             var skipped = false;
-            Ui.Progress(++i, owned.Count, Plain(r.Kind) + " 제거", () =>
+            Ui.Progress(++i, owned.Count, Label(r) + " 제거", () =>
             {
                 history.Detail("대상", r.Key);
                 switch (r.Kind)
@@ -524,6 +548,12 @@ internal static class AutostartCommand
                 history.Done("제거");
             }, history);
             if (!skipped) remaining.Remove(r);
+        }
+        // 작업을 끝내도 세션 0 에이전트(로그인 전 접속)가 남을 수 있어 정리한다.
+        foreach (var pid in SessionZeroAgents())
+        {
+            history.Note($"남은 에이전트 종료: PID {pid}");
+            try { System.Diagnostics.Process.GetProcessById(pid).Kill(entireProcessTree: true); } catch (ArgumentException) { } catch (InvalidOperationException) { }
         }
         store.Save(state with { ResourceOwnership = remaining });
         history.Finish("완료");

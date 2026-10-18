@@ -69,7 +69,7 @@ internal static class App
                     ? await WslRemoteSetup.Agent.AgentCommand.RunAsync(aid, options.Distro ?? DesiredConfiguration.DefaultDistro)
                     : Usage("agent --installation-id <guid> [--distro <이름>]"),
                 "service" => await WslRemoteSetup.Service.ServiceCommand.RunAsync(),
-                "autostart" => await WithPause(options, () => WslRemoteSetup.Service.AutostartCommand.RunAsync(new(sub ?? "", options.InstallationId, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro))),
+                "autostart" => await WithPause(options, () => WslRemoteSetup.Service.AutostartCommand.RunAsync(new(sub ?? "", options.InstallationId, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro, options.PreLogin))),
                 "network" => await WithPause(options, () => WslRemoteSetup.Network.NetworkCommand.RunAsync(sub ?? "", options.Ip)),
                 "export-client" => await WithPause(options, () => WslRemoteSetup.Client.ExportClientCommand.RunAsync(options.Name, options.LinuxUser, options.OutDir)),
                 "power" => await WithPause(options, () => WslRemoteSetup.Power.PowerCommand.RunAsync(sub ?? "")),
@@ -254,6 +254,7 @@ internal static class App
               WslRemoteSetup.exe forward add-service --service web:8080:80   추가 포트 열기(관리자 창)
               WslRemoteSetup.exe forward remove-service --name web           추가 포트 닫기(관리자 창)
               WslRemoteSetup.exe autostart plan|install|remove  로그인 시 자동 실행·백그라운드 연결 관리(install/remove는 관리자 창)
+              WslRemoteSetup.exe autostart prelogin-on|prelogin-off  (선택) 로그인하지 않아도 켜지면 접속 허용·해제(관리자 창, 기본 꺼짐)
               WslRemoteSetup.exe network plan|apply|revert [--ip 주소]  (고급) 이 PC 주소 고정·해제(apply/revert는 관리자 창, 5분 안에 확인 없으면 자동 원복)
               WslRemoteSetup.exe pause | resume-monitoring  자동 복구 일시중지/재개(소유자 계정)
               WslRemoteSetup.exe power [keep-awake|restore]  절전 점검 · 전원 연결 시 절전 안 함 · 되돌리기
@@ -322,6 +323,7 @@ internal sealed record Options
     public IReadOnlyList<WslRemoteSetup.Core.Model.ServiceForward> Services { get; init; } = [];
     public string? Name { get; init; }
     public string? OutDir { get; init; }
+    public bool? PreLogin { get; init; }
     public string? Ip { get; init; }
     public SshAuthentication? SshAuth { get; init; }
     public string? Error { get; init; }
@@ -377,6 +379,10 @@ internal sealed record Options
                 case "--host-key":
                     if (!WslRemoteSetup.Core.Ssh.HostKeyFingerprint.IsWellFormed(value)) return o with { Error = "--host-key는 SHA256:… 형식이어야 합니다." };
                     o = o with { HostKey = value };
+                    break;
+                case "--prelogin":
+                    if (value is not ("on" or "off")) return o with { Error = "--prelogin은 on 또는 off여야 합니다." };
+                    o = o with { PreLogin = value == "on" };
                     break;
                 case "--out":
                     if (!Directory.Exists(value)) return o with { Error = "--out 폴더가 없습니다." };

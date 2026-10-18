@@ -591,3 +591,10 @@
   - `%LOCALAPPDATA%\WslRemoteSetup\logs\agent.log`
   - WSL `journalctl -u ssh`
   - Security/TerminalServices 이벤트
+
+## 2026-10-18 22:2x — 로그인 전 접속 선택 기능(ADR 0010) 코드 · G2 읽기 확인
+
+- 코드: 설치 질문 6번(기본 아니오), `autostart install --prelogin`, `autostart prelogin-on|off`, status 표시, 되돌리기 정리.
+- 테스트: 빌드 경고 0. 단위 297, 통합 25 통과.
+- G2 `status`(Debug 빌드, 일반 권한, 읽기 전용): "로그인 전 접속: 켜짐" 표시 PASS. 세션 0 에이전트는 최근 점검 기록으로 "실행 중" 표시 PASS. 비승격 `prelogin-on`은 관리자 권한 안내 후 종료(exit 2).
+- `prelogin-on/off` 적용과 설치 마법사 6번 흐름은 실기 **NOT_TESTED**. 설치본(Program Files)은 이전 빌드다.

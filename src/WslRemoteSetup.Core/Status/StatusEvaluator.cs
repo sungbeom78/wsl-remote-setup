@@ -36,6 +36,8 @@ public sealed record StatusFacts
     public IReadOnlyList<(string Name, int ListenPort, int ConnectPort, bool? Listening)> Services { get; init; } = [];
     /// <summary>전원 계획의 절전 설정. null이면 조회하지 않음(줄을 표시하지 않음).</summary>
     public Power.SleepInfo? Sleep { get; init; }
+    /// <summary>로그인 전 접속(부팅 작업)이 켜져 있는지. null이면 줄을 표시하지 않음.</summary>
+    public bool? PreLogin { get; init; }
     public DateTimeOffset Now { get; init; }
 }
 
@@ -158,6 +160,12 @@ public static class StatusEvaluator
                 "공유기에서 이 PC 주소를 고정 배정(DHCP 예약)하면 안전합니다."));
         else if (f.AddressIsDhcp == false)
             lines.Add(new("이 PC 주소", Health.Good, $"{f.ListenAddress} (고정 주소)"));
+
+        // 로그인 전 접속(선택 기능)
+        if (f.PreLogin is { } pre)
+            lines.Add(pre
+                ? new("로그인 전 접속", Health.Good, "켜짐 — 컴퓨터를 켜기만 해도 약 1분 뒤부터 접속할 수 있습니다.")
+                : new("로그인 전 접속", Health.Off, "꺼짐 — 컴퓨터를 켠 뒤 로그인해야 접속할 수 있습니다.", "켜려면 관리자 창에서 'autostart prelogin-on'"));
 
         // 8. 절전(잠들면 접속 불가)
         if (f.Sleep is not null)
