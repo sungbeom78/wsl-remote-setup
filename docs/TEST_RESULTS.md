@@ -106,3 +106,19 @@
 | 비대화형 메뉴 | PASS | exit 3 UserInputRequired |
 | 잘못된 입력(`--linux-user root`) | PASS | exit 2, 거부 |
 | 실제 SSH/RDP 인증 | NOT_TESTED | |
+
+## 2026-10-18 — M3 코드 단계 (시스템 변경 없음)
+
+- 환경: G2, .NET SDK 10.0.402, ownerAdmin 비승격
+- 로그: `.local/logs/test/*.trx`
+
+| 항목 | 결과 | 비고 |
+|---|---|---|
+| 단위 테스트 | PASS | 131/131. 요청 변조 12종, 정책, 검증기(T10 논리), 조정기(T11·T17), 코디네이터 |
+| 통합: 같은 사용자 파이프 왕복·호출자 SID | PASS | 메시지가 아니라 파이프 가장으로 SID 확인 |
+| 통합: 변조 요청 | PASS | 서버에서 Denied |
+| 통합: 초과 요청 | FAIL → 수정 → PASS | 1차 실행은 교착으로 10초 timeout. 버린 뒤 응답하도록 수정 |
+| 통합: ACL에 없는 사용자 연결 | PASS | UnauthorizedAccessException |
+| 통합 반복 3회 | PASS | 흔들림 없음 |
+| T09/T10 실계정(다른 로컬 사용자) | NOT_TESTED | 일반 테스트 계정이 필요하며 생성은 승인 대상 |
+| SYSTEM 서비스 컨텍스트 | NOT_TESTED | 서비스 등록은 승인 대상 |

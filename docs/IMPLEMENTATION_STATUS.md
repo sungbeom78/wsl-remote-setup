@@ -9,7 +9,7 @@
 | M0 G2 진단·현황·변경 계획 | **완료** | `.local/G2_ENVIRONMENT_REPORT.md`, `.local/G2_ENVIRONMENT.json` |
 | M1 WSL·Ubuntu·개발 도구 | **완료** | B3 WSL2 PASS, B4 Ubuntu-24.04/linux_admin PASS, B5 Git 2.55 + .NET SDK 10.0.402 PASS |
 | M2 솔루션·doctor·plan·상태·단위 테스트 | **완료** | 빌드 경고 0, 단위 테스트 88/88 통과, G2 실기 doctor/plan/status 확인 |
-| M3 권한 분리·WSL 수명 POC | 다음 | 아래 "다음 단계" 참고 |
+| M3 권한 분리·WSL 수명 POC | **진행 중** | 코드·테스트 단계 완료(단위 131, 통합 5 통과). 실기 POC(서비스·수명·일반 계정)는 승인 대기 |
 | M4~M7 | 대기 | — |
 
 ## 보존 대상 (변경 금지)
@@ -52,12 +52,29 @@
   - 발견·수정한 결함: 프로그램/UWP에 묶인 와일드카드 규칙이 RDP 허용 규칙으로 집계되던 오탐. 회귀 테스트 2개를 추가함.
   - 참고: WSL이 3.0.1.0에서 3.0.3.0으로 자동 업데이트됨(Store).
 
+## M3 코드 단계 결과 (2026-10-18)
+
+- 커밋 `45efbb4`(M0~M2) 이후 작업. 설계는 `docs/adr/0003-owner-agent-network-manager-ipc.md`.
+- Core
+  - `Ipc/RepairMessages`: 엄격한 요청 파서(1 KB, 필드 3개 고정, 중복·미지 필드·타입 오류 거부), 짧은 응답 코드.
+  - `Policy/ForwardingPolicy`: 0.0.0.0·loopback 수신 금지, 사용자 SID 필수.
+  - `RepairRequestValidator`: 호출자 SID = 소유자, 설치 ID, 사설 IPv4, 관리부가 직접 관찰한 WSL 대역 안, rate limit.
+  - `Forwarding/PortProxyReconciler`: 소유한 tuple만 다룸. Add/NoChange/Update를 결정하고, 외부 변경·와일드카드 수신이 있으면 Conflict로 판정.
+  - `RepairCoordinator`: 검증 → 조정 → endpoint 확인 → 적용. Windows 측은 `IForwardingHost`로 추상화.
+- App `Ipc/RepairPipe`
+  - ACL: SYSTEM·Administrators FullControl, 소유자 ReadWrite, NETWORK Deny, 상속 차단.
+  - 서버: `FirstPipeInstance`, `RunAsClient`로 호출자 SID 확인, 5초 읽기 timeout, 초과 메시지는 버린 뒤 거부(64 KB를 넘으면 연결을 끊음).
+  - 클라이언트: 가장 수준을 Identification으로 제한.
+- 테스트
+  - 단위 131개 통과.
+  - 통합(`tests/WslRemoteSetup.IntegrationTests`) 5개 통과, 3회 반복해도 결과가 같음.
+    - 다루는 항목: 같은 사용자 파이프 왕복, 변조 요청, 초과 요청, ACL 거부, 보안 설명자.
+  - 1차 실행에서 결함 1건 발견 후 수정: 초과 요청 처리 시 교착이 생겼다. 이제 서버가 메시지 끝까지 읽어 버린 뒤 응답한다.
+- 미검증: 다른 로컬 사용자 거부(T10 실계정), 서비스 컨텍스트(SYSTEM)에서의 가장, 파이프 선점(squatting) 방지의 실효성, 클라이언트 측 서버 신원 확인.
+
 ## 다음 단계
 
-1. **M3 POC (코드·설계)** — 시스템 변경 없음
-   - 소유자 에이전트와 네트워크 관리부 사이의 named pipe IPC 계약 설계: ACL, 호출자 SID 검증, 요청 스키마(installationId·observedWslIPv4만 허용)
-   - 정책 검증기와 단위 테스트(변조된 요청, 임의 IP·포트 거부)
-2. **M3 POC (실기)** — 승인 필요
+1. **M3 POC (실기)** — 승인 필요
    - 소유자 세션에서 WSL 수명 유지 방식 실험(foreground `wsl.exe` 관리)
    - 테스트 서비스 등록: 서비스 등록은 승인 대상
    - T09(일반 사용자 소유자) 검증용 일반 테스트 계정: 생성은 승인 대상. 생성하지 않으면 NOT_TESTED로 남긴다.
