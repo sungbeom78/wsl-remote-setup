@@ -470,3 +470,4 @@
 | 서비스 시작 유형 | PASS | StartMode=Auto, DelayedAutoStart=False |
 | 부팅 작업 | PASS | Ready(재설치 때 세션 0 에이전트가 정리되어 다음 부팅에 다시 실행) |
 | 2차 재부팅 시험 | PENDING | 로그인 전 1분·3분에 사용자가 `ssh G2` 시험 |
+- 2026-10-18 18:38: 사용자 요청으로 예약 재부팅을 취소함(`shutdown /a` exit 0, LastBoot 17:58:51 그대로). 2차 재부팅 시험은 보류.
