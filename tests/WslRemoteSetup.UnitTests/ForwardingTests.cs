@@ -250,6 +250,59 @@ public class RepairCoordinatorTests
         Assert.Equal(0, host.Reapplied);
     }
 
+    private static RepairCoordinator WithServices(FakeHost host, string? recorded = null) =>
+        new(ForwardingFixtures.Policy() with { Services = [new ServiceForward("web", 8080, 80), new ServiceForward("db", 15432, 5432)] },
+            host, new FakeTimeProvider(DateTimeOffset.UnixEpoch.AddDays(1)), recorded);
+
+    [Fact]
+    public void Services_are_added_with_ssh_and_follow_wsl_ip_change() // T11 + 여러 서비스 포트
+    {
+        var host = new FakeHost();
+        var time = new FakeTimeProvider(DateTimeOffset.UnixEpoch.AddDays(1));
+        var c = new RepairCoordinator(ForwardingFixtures.Policy() with { Services = [new ServiceForward("web", 8080, 80)] }, host, time);
+        Assert.Equal(RepairCode.Updated, c.Handle(ForwardingFixtures.Owner, ForwardingFixtures.Request("172.24.220.111"), "").Code);
+        Assert.Contains(host.Rules, r => r is { ListenPort: 8080, ConnectAddress: "172.24.220.111", ConnectPort: 80 });
+
+        time.Advance(TimeSpan.FromMinutes(1));
+        c.Handle(ForwardingFixtures.Owner, ForwardingFixtures.Request("172.24.220.200"), "");
+        Assert.Contains(host.Rules, r => r is { ListenPort: 1004, ConnectAddress: "172.24.220.200" });
+        Assert.Contains(host.Rules, r => r is { ListenPort: 8080, ConnectAddress: "172.24.220.200", ConnectPort: 80 });
+    }
+
+    [Fact]
+    public void Missing_service_rule_is_added_on_no_change_request()
+    {
+        var host = new FakeHost();
+        host.Rules.Add(new("192.168.1.222", 1004, "172.24.220.111", 22));
+        var c = WithServices(host, "172.24.220.111");
+        var r = c.Handle(ForwardingFixtures.Owner, ForwardingFixtures.Request("172.24.220.111"), "");
+        Assert.Equal(RepairCode.Updated, r.Code);
+        Assert.Equal(3, host.Rules.Count);
+    }
+
+    [Fact]
+    public void Foreign_service_rule_is_skipped_without_blocking_ssh()
+    {
+        var host = new FakeHost();
+        host.Rules.Add(new("192.168.1.222", 8080, "10.9.9.9", 80)); // 남이 만든 규칙
+        var c = WithServices(host);
+        Assert.Equal(RepairCode.Updated, c.Handle(ForwardingFixtures.Owner, ForwardingFixtures.Request(), "").Code);
+        Assert.Contains(host.Rules, r => r is { ListenPort: 8080, ConnectAddress: "10.9.9.9" }); // 그대로
+        Assert.Contains(host.Rules, r => r is { ListenPort: 1004 });
+        Assert.Contains(host.Rules, r => r is { ListenPort: 15432 });
+    }
+
+    [Fact]
+    public void Service_validation()
+    {
+        Assert.Empty(ServiceForward.Validate([new("web", 8080, 80)], 1004));
+        Assert.NotEmpty(ServiceForward.Validate([new("web", 1004, 80)], 1004));               // SSH 포트와 겹침
+        Assert.NotEmpty(ServiceForward.Validate([new("Web Server", 8080, 80)], 1004));        // 이름 형식
+        Assert.NotEmpty(ServiceForward.Validate([new("a", 8080, 80), new("b", 8080, 81)], 1004)); // 외부 포트 중복
+        Assert.NotEmpty(ServiceForward.Validate([new("ssh", 2222, 22)], 1004));               // 예약 이름
+        Assert.NotEmpty((ForwardingFixtures.Policy() with { Services = [new("web", 1004, 80)] }).Validate());
+    }
+
     [Fact]
     public void External_conflict_stops()
     {

@@ -24,7 +24,9 @@ internal sealed record ForwardOptions(
     int ListenPort,
     string? WslAddress,
     string? HostKey,
-    string Distro);
+    string Distro,
+    IReadOnlyList<ServiceForward>? Services = null,
+    string? ServiceName = null);
 
 /// <summary>
 /// `forward plan|apply|remove` — 외부 접속을 WSL SSH로 전달하는 통로와 LAN 한정 방화벽 규칙(M4).
@@ -39,6 +41,8 @@ internal static class ForwardCommand
         "plan" => await PlanOrApplyAsync(o, apply: false),
         "apply" => await PlanOrApplyAsync(o, apply: true),
         "remove" => await RemoveAsync(),
+        "add-service" => await ServiceForwarding.AddAsync(o.Services ?? []),
+        "remove-service" => await ServiceForwarding.RemoveAsync(o.ServiceName),
         _ => Usage(),
     };
 
@@ -123,6 +127,7 @@ internal static class ForwardCommand
         LogPlan(history, plan, facts);
         history.Done(plan.CanApply ? "진행 가능" : "진행 불가");
         PrintPlan(plan, facts, apply);
+        foreach (var s in o.Services ?? []) Ui.Line($"추가 서비스: {s.Name} — 외부 {s.ListenPort}번 → WSL {s.ConnectPort}번 (같은 공유기 기기만 허용)");
 
         if (!apply)
         {
@@ -138,7 +143,8 @@ internal static class ForwardCommand
         }
 
         if (!plan.CanApply) { history.Finish("진행 불가"); Ui.HistoryHint(history); return App.ExitChecksFailed; }
-        if (!plan.HasChanges)
+        var extra = o.Services ?? [];
+        if (!plan.HasChanges && extra.Count == 0)
         {
             Ui.Line("바꿀 것이 없습니다. 연결 상태만 확인합니다.");
             var verified = await VerifyAsync(runner, facts, history);
@@ -153,6 +159,7 @@ internal static class ForwardCommand
         var now = DateTimeOffset.UtcNow;
         state ??= new InstallState { InstallationId = installationId, AppVersion = AppVersion() };
         var resources = state.ResourceOwnership.ToList();
+        var services = state.Services.ToList();
         var before = new Dictionary<string, string>(state.BeforeSnapshots);
         var key = string.Create(CultureInfo.InvariantCulture, $"{listen}:{o.ListenPort}");
         var total = (plan.PortProxy!.Kind is ReconcileKind.Add or ReconcileKind.Update ? 1 : 0) + (plan.Firewall == FirewallActionKind.Create ? 1 : 0);
@@ -191,6 +198,14 @@ internal static class ForwardCommand
                     history.Done("적용");
                 }, history);
             }
+            if (extra.Count > 0)
+            {
+                var (applied, skippedServices) = ServiceForwarding.Apply(extra, installationId, listen, target.ToString(),
+                    plan.Rule?.RemoteCidr ?? "", resources, runner, history);
+                services = [.. services.Where(x => applied.All(a => a.Name != x.Name)), .. applied];
+                foreach (var a in applied) Ui.Line($"  ✔ 추가 서비스 {a.Name}: 외부 {a.ListenPort}번 → WSL {a.ConnectPort}번");
+                foreach (var s in skippedServices) Ui.Blocked($"추가 서비스 건너뜀 — {s}");
+            }
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
         {
@@ -204,6 +219,7 @@ internal static class ForwardCommand
                 OwnerSid = id.User!.Value,
                 DistroName = o.Distro,
                 SshHostKey = hostKey,
+                Services = services,
                 ResourceOwnership = resources,
                 BeforeSnapshots = before,
                 ApprovalHistory = [.. state.ApprovalHistory, new ApprovalRecord(now, id.User!.Value, PlanHash(plan), ["portproxy", "firewall-ssh"])],

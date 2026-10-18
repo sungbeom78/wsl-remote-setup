@@ -58,8 +58,12 @@ public sealed class RepairCoordinator(
             switch (action.Kind)
             {
                 case ReconcileKind.NoChange:
+                {
                     RecordedConnectAddress = action.Desired!.ConnectAddress;
-                    return ListeningOrRepaired(action.Existing!, action.Reason);
+                    var r = ListeningOrRepaired(action.Existing!, action.Reason);
+                    var changed = SyncServices(request.ObservedWslIPv4, RecordedConnectAddress);
+                    return changed > 0 && r.Code == RepairCode.NoChange ? new(RepairCode.Updated, $"추가 서비스 {changed}개 갱신") : r;
+                }
                 case ReconcileKind.Conflict:
                     return new(RepairCode.Conflict, action.Reason);
             }
@@ -67,11 +71,40 @@ public sealed class RepairCoordinator(
             if (!host.CheckEndpoint(request.ObservedWslIPv4, policy.ConnectPort))
                 return new(RepairCode.EndpointUnreachable, "대상 SSH endpoint를 확인하지 못했습니다.");
 
+            var before = RecordedConnectAddress;
             host.Apply(action);
             RecordedConnectAddress = action.Desired!.ConnectAddress;
             LastUpdateAt = now;
+            // SSH 서버 키로 대상 WSL을 확인했으므로, 같은 주소로 추가 서비스도 옮긴다.
+            SyncServices(request.ObservedWslIPv4, before);
             return new(RepairCode.Updated, action.Kind == ReconcileKind.Add ? "포워딩 추가" : "포워딩 대상 갱신");
         }
+    }
+
+    /// <summary>
+    /// 추가 서비스 규칙을 SSH와 같은 대상으로 맞춘다. 남이 바꾼 규칙(Conflict)은 건드리지 않고 건너뛴다(SSH는 막지 않음).
+    /// 돌려주는 값은 바꾼 규칙 수.
+    /// </summary>
+    private int SyncServices(System.Net.IPAddress target, string? recordedBefore)
+    {
+        var changed = 0;
+        foreach (var s in policy.Services)
+        {
+            var sp = policy.ForService(s);
+            var a = PortProxyReconciler.Decide(sp, host.GetPortProxies(), recordedBefore, target);
+            switch (a.Kind)
+            {
+                case ReconcileKind.Add or ReconcileKind.Update:
+                    host.Apply(a);
+                    changed++;
+                    break;
+                case ReconcileKind.NoChange when !host.IsListening(sp.ListenAddress, sp.ListenPort):
+                    host.Reapply(a.Existing!);
+                    changed++;
+                    break;
+            }
+        }
+        return changed;
     }
 
     /// <summary>
@@ -89,9 +122,24 @@ public sealed class RepairCoordinator(
             if (existing is null || existing.ConnectPort != policy.ConnectPort
                 || !string.Equals(existing.ConnectAddress, RecordedConnectAddress, StringComparison.OrdinalIgnoreCase))
                 return false;
-            if (host.IsListening(policy.ListenAddress, policy.ListenPort)) return false;
-            host.Reapply(existing);
-            return true;
+            var repaired = false;
+            if (!host.IsListening(policy.ListenAddress, policy.ListenPort))
+            {
+                host.Reapply(existing);
+                repaired = true;
+            }
+            // 추가 서비스: 기록과 같은 대상으로 있는 규칙만 수신 복구한다.
+            foreach (var s in policy.Services)
+            {
+                var r = host.GetPortProxies().FirstOrDefault(p => p.ListenPort == s.ListenPort
+                    && string.Equals(p.ListenAddress, policy.ListenAddress, StringComparison.OrdinalIgnoreCase));
+                if (r is null || r.ConnectPort != s.ConnectPort
+                    || !string.Equals(r.ConnectAddress, RecordedConnectAddress, StringComparison.OrdinalIgnoreCase)) continue;
+                if (host.IsListening(policy.ListenAddress, s.ListenPort)) continue;
+                host.Reapply(r);
+                repaired = true;
+            }
+            return repaired;
         }
     }
 

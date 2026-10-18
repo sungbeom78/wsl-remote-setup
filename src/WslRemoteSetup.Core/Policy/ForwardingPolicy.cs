@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using WslRemoteSetup.Core.Ipc;
+using WslRemoteSetup.Core.Model;
 using WslRemoteSetup.Core.Network;
 using WslRemoteSetup.Core.State;
 using WslRemoteSetup.Core.Validation;
@@ -29,6 +30,12 @@ public sealed record ForwardingPolicy
     public string? ListenInterfaceId { get; init; }
     /// <summary>승인 당시 LAN 범위(예: 192.168.1.0/24).</summary>
     public string? LanCidr { get; init; }
+    /// <summary>SSH 외 추가 서비스 포트. SSH와 같은 WSL 주소로 전달된다.</summary>
+    public IReadOnlyList<ServiceForward> Services { get; init; } = [];
+
+    /// <summary>추가 서비스 하나를 SSH와 같은 형태의 정책으로 본다(조정기 재사용용).</summary>
+    public ForwardingPolicy ForService(ServiceForward s) =>
+        this with { ListenPort = s.ListenPort, ConnectPort = s.ConnectPort, Services = [] };
 
     public IReadOnlyList<string> Validate()
     {
@@ -43,6 +50,7 @@ public sealed record ForwardingPolicy
         if (!InputValidator.Port(ListenPort).IsValid) e.Add("listenPort 범위 오류");
         if (!InputValidator.Port(ConnectPort).IsValid) e.Add("connectPort 범위 오류");
         if (MinUpdateInterval < TimeSpan.FromSeconds(5)) e.Add("minUpdateInterval은 5초 이상이어야 합니다.");
+        e.AddRange(ServiceForward.Validate(Services, ListenPort));
         if (FollowAddressChange)
         {
             if (string.IsNullOrEmpty(ListenInterfaceId)) e.Add("주소 따라가기에는 네트워크 카드 ID가 필요합니다.");

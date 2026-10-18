@@ -51,6 +51,8 @@ public sealed record InstallState
     public string? DistroName { get; init; }
     /// <summary>등록된 WSL SSH 서버 키 지문(공개 정보). 이후 명령에서 사용자가 다시 입력하지 않도록 기록한다.</summary>
     public string? SshHostKey { get; init; }
+    /// <summary>SSH 외 추가로 연 서비스 포트(관리자 보호 상태에 기록, 자동 실행 정책의 원본).</summary>
+    public IReadOnlyList<Model.ServiceForward> Services { get; init; } = [];
     public string? ApprovedPlanHash { get; init; }
     public IReadOnlyList<ApprovalRecord> ApprovalHistory { get; init; } = [];
     public IReadOnlyDictionary<string, StepState> StepStates { get; init; } = new Dictionary<string, StepState>();

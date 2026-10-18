@@ -248,6 +248,7 @@ internal static class AutostartCommand
             ListenInterfaceId = interfaceId,
             LanCidr = lanCidr,
             FollowAddressChange = isDhcp && previousFollow,
+            Services = state?.Services ?? [],
         };
         if (port != 0) blockers.AddRange(policy.Validate());
 

@@ -32,6 +32,8 @@ public sealed record StatusFacts
     /// <summary>접속 주소를 가진 네트워크가 자동 할당(DHCP)인지.</summary>
     public bool? AddressIsDhcp { get; init; }
     public string? CurrentAddress { get; init; }
+    /// <summary>추가 서비스: 이름·외부 포트·WSL 포트·수신 여부.</summary>
+    public IReadOnlyList<(string Name, int ListenPort, int ConnectPort, bool? Listening)> Services { get; init; } = [];
     public DateTimeOffset Now { get; init; }
 }
 
@@ -136,6 +138,11 @@ public static class StatusEvaluator
             false => new("방화벽", Health.Bad, "허용 규칙이 없어 다른 PC에서 접속이 막힙니다."),
             null => new("방화벽", Health.Unknown, "확인하지 못했습니다."),
         });
+
+        foreach (var svc in f.Services)
+            lines.Add(new($"추가 서비스 {svc.Name}", svc.Listening == true ? Health.Good : svc.Listening == false ? Health.Warn : Health.Unknown,
+                svc.Listening == true ? $"열려 있음 (외부 {svc.ListenPort}번 → WSL {svc.ConnectPort}번, WSL 안 프로그램이 실행 중이어야 접속됨)"
+                : svc.Listening == false ? $"외부 {svc.ListenPort}번 통로가 열려 있지 않습니다(보통 1분 안에 자동 복구)." : "확인하지 못했습니다."));
 
         // 7. 이 PC 주소(DHCP 여부)
         if (f.ListenAddressPresent == false)

@@ -6,6 +6,7 @@ using WslRemoteSetup.Core.Execution;
 using WslRemoteSetup.Core.Model;
 using WslRemoteSetup.Core.Setup;
 using WslRemoteSetup.Core.State;
+using WslRemoteSetup.Core.Validation;
 using WslRemoteSetup.Reporting;
 using WslRemoteSetup.Service;
 
@@ -18,7 +19,8 @@ internal sealed record SetupChoices(
     int ListenPort,
     SshAuthentication SshAuth,
     string Distro,
-    DateTimeOffset ChosenAt);
+    DateTimeOffset ChosenAt,
+    IReadOnlyList<ServiceForward>? Services = null);
 
 /// <summary>
 /// 설치 질문(Enter = 기본값). 포트·계정·Linux 사용자·로그인 방식만 묻고, IP·LAN 범위·RDP 포트는 PC 설정을 그대로 쓴다.
@@ -124,13 +126,48 @@ internal static class SetupWizard
                 return null;
             })) return null;
 
-        var choices = new SetupChoices(owner, linuxUser, port, auth, previous?.Distro ?? DesiredConfiguration.DefaultDistro, DateTimeOffset.Now);
+
+        // 5. (선택) 추가 서비스 포트
+        var services = new List<ServiceForward>(previous?.Services ?? []);
+        Console.WriteLine();
+        Console.Write($"  5. SSH 말고 더 열 포트가 있나요? (예: 웹 서버) [y/N] ");
+        if (Confirmation.ParseDefaultNo(Console.ReadLine()) == ConfirmAnswer.Yes)
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                Console.Write("     서비스 이름(영문 소문자, 예: web) [끝내려면 Enter]: ");
+                var name = Console.ReadLine()?.Trim().ToLowerInvariant();
+                if (string.IsNullOrEmpty(name)) break;
+                var wslPort = 0;
+                if (!Ask("     WSL 안 프로그램의 포트", "80", input => { var a = SetupQuestions.Port(input, 80); if (!a.Ok) return a.Error; wslPort = a.Value; return null; })) break;
+                var taken = listening.Concat(services.Select(x => x.ListenPort)).Append(port).ToList();
+                var suggest = PortAdvisor.Suggest(wslPort < 1024 ? 8000 + wslPort : wslPort, taken, proxies, excluded, s.Rdp?.Port) ?? 8080;
+                var extPort = 0;
+                if (!Ask("     다른 PC에서 접속할 포트", suggest.ToString(CultureInfo.InvariantCulture), input =>
+                    {
+                        var a = SetupQuestions.Port(input, suggest);
+                        if (!a.Ok) return a.Error;
+                        var c = PortAdvisor.Check(a.Value, taken, proxies, excluded, s.Rdp?.Port);
+                        if (!c.Usable || a.Value == port) return $"{a.Value}번은 {(a.Value == port ? "SSH가 쓰는 포트입니다." : c.Reason)}";
+                        extPort = a.Value;
+                        return null;
+                    })) break;
+                var candidate = new ServiceForward(name, extPort, wslPort);
+                var errors = ServiceForward.Validate([.. services.Where(x => x.Name != name), candidate], port);
+                if (errors.Count > 0) { Console.WriteLine($"    → {errors[0]}"); continue; }
+                services.RemoveAll(x => x.Name == name);
+                services.Add(candidate);
+                Console.WriteLine($"     추가: {name} — 외부 {extPort}번 → WSL {wslPort}번");
+            }
+        }
+        var choices = new SetupChoices(owner, linuxUser, port, auth, previous?.Distro ?? DesiredConfiguration.DefaultDistro, DateTimeOffset.Now, services);
         UserPaths.WriteJsonAtomic(ChoicesFile, choices);
 
         Console.WriteLine();
         Ui.Line("선택한 값");
         Ui.Line($"  포트 {choices.ListenPort}번 · 계정 {choices.OwnerAccount} · Linux 사용자 {choices.LinuxUser} · " +
                 (choices.SshAuth == SshAuthentication.PublicKeyOnly ? "키로만 로그인" : "비밀번호 또는 키"));
+        foreach (var x in services) Ui.Line($"  추가 포트: {x.Name} — 외부 {x.ListenPort}번 → WSL {x.ConnectPort}번");
         Ui.Line("  이 PC의 IP 주소·공유기 범위·원격 데스크톱 포트는 지금 설정을 그대로 씁니다.");
         return choices;
     }

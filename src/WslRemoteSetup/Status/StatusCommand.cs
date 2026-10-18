@@ -165,6 +165,8 @@ internal static class StatusCommand
             FirewallRuleExists = firewall,
             Listening = listening,
             SshAnswers = banner?.StartsWith("SSH-2.0-", StringComparison.Ordinal) == true,
+            Services = state.Services.Select(sv => (sv.Name, sv.ListenPort, sv.ConnectPort,
+                (bool?)IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(e => e.Port == sv.ListenPort && e.Address.ToString() == listen))).ToList(),
             ListenAddressPresent = present,
             AddressIsDhcp = dhcp,
             CurrentAddress = present == true ? null : currentAddress,

@@ -113,6 +113,15 @@ public class StatusEvaluatorTests
     }
 
     [Fact]
+    public void Extra_services_are_listed_in_plain_words()
+    {
+        var r = StatusEvaluator.Evaluate(Healthy() with { Services = [("web", 8080, 80, true), ("db", 15432, 5432, false)] });
+        Assert.Equal(Health.Good, Line(r, "추가 서비스 web").Health);
+        Assert.Contains("외부 8080번 → WSL 80번", Line(r, "추가 서비스 web").Text);
+        Assert.Equal(Health.Warn, Line(r, "추가 서비스 db").Health);
+    }
+
+    [Fact]
     public void Not_installed_is_off()
     {
         var r = StatusEvaluator.Evaluate(new StatusFacts { Installed = false, Now = Now });

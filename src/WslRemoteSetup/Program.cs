@@ -54,7 +54,7 @@ internal static class App
                 "poc-lifetime" => await PocLifetimeAsync(options),
                 "forward" => await WithPause(options, () => WslRemoteSetup.Forwarding.ForwardCommand.RunAsync(new(
                     sub ?? "", options.InstallationId, options.Listen, options.Port ?? DesiredConfiguration.DefaultListenPort,
-                    options.WslIp, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro))),
+                    options.WslIp, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro, options.Services, options.Name))),
                 "help" or "--help" or "-h" or "/?" => Help(),
                 "version" or "--version" => PrintVersion(),
                 "agent" => options.InstallationId is { } aid
@@ -240,6 +240,8 @@ internal static class App
               WslRemoteSetup.exe plan [옵션]     현재 상태 기반 설치 계획(변경 없음)
               WslRemoteSetup.exe status          서비스·자동 실행·SSH 접속 상태를 한눈에(읽기 전용)
               WslRemoteSetup.exe forward plan|apply|remove  SSH 연결 통로·방화벽 허용 규칙(apply/remove는 관리자 창)
+              WslRemoteSetup.exe forward add-service --service web:8080:80   추가 포트 열기(관리자 창)
+              WslRemoteSetup.exe forward remove-service --name web           추가 포트 닫기(관리자 창)
               WslRemoteSetup.exe autostart plan|install|remove  로그인 시 자동 실행·백그라운드 연결 관리(install/remove는 관리자 창)
               WslRemoteSetup.exe pause | resume-monitoring  자동 복구 일시중지/재개(소유자 계정)
               WslRemoteSetup.exe version
@@ -302,6 +304,8 @@ internal sealed record Options
     public string? WslIp { get; init; }
     public string? HostKey { get; init; }
     public bool PauseAtEnd { get; init; }
+    public IReadOnlyList<WslRemoteSetup.Core.Model.ServiceForward> Services { get; init; } = [];
+    public string? Name { get; init; }
     public SshAuthentication? SshAuth { get; init; }
     public string? Error { get; init; }
 
@@ -341,6 +345,13 @@ internal sealed record Options
                     SshAuthentication? mode = value switch { "password" => SshAuthentication.PasswordAndPublicKey, "key-only" => SshAuthentication.PublicKeyOnly, _ => null };
                     if (mode is null) return o with { Error = "--ssh-auth는 password 또는 key-only입니다." };
                     o = o with { SshAuth = mode };
+                    break;
+                case "--service":
+                    if (WslRemoteSetup.Forwarding.ServiceForwarding.Parse(value) is not { } svc) return o with { Error = "--service는 이름:외부포트:WSL포트 형식입니다(예: web:8080:80)." };
+                    o = o with { Services = [.. o.Services, svc] };
+                    break;
+                case "--name":
+                    o = o with { Name = value.Trim().ToLowerInvariant() };
                     break;
                 case "--host-key":
                     if (!WslRemoteSetup.Core.Ssh.HostKeyFingerprint.IsWellFormed(value)) return o with { Error = "--host-key는 SHA256:… 형식이어야 합니다." };

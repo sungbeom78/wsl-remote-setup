@@ -52,6 +52,9 @@ public sealed record ForwardingPlan(
 /// </summary>
 public static class ForwardingPlanBuilder
 {
+    public static string RuleName(Guid installationId, int port, string service) =>
+        string.Create(CultureInfo.InvariantCulture, $"WslRemoteSetup {service} {port} ({installationId.ToString("N")[..8]})");
+
     public static string RuleName(Guid installationId, int port) =>
         string.Create(CultureInfo.InvariantCulture, $"WslRemoteSetup SSH {port} ({installationId.ToString("N")[..8]})");
 

@@ -193,7 +193,8 @@ internal static class InstallWizard
         if (!HostKeyFingerprint.IsWellFormed(hostKey)) return Stop(history, "WSL SSH 서버 확인 정보를 읽지 못했습니다.");
         history.Detail("WSL 주소·서버 키", $"{wslIp} {hostKey}");
         Impact("다른 PC가 SSH로 들어올 수 있게 연결 통로와 방화벽 허용 규칙을 만듭니다(관리자 권한).",
-            [$"이 PC의 {choices.ListenPort}번으로 들어온 접속을 WSL SSH로 전달합니다.",
+            [.. (choices.Services ?? []).Select(s => $"추가 서비스 {s.Name}: 외부 {s.ListenPort}번 → WSL {s.ConnectPort}번"),
+             $"이 PC의 {choices.ListenPort}번으로 들어온 접속을 WSL SSH로 전달합니다.",
              "같은 공유기에 연결된 기기만 허용하고, '개인 네트워크'일 때만 동작합니다.",
              "관리자 창이 열리면 같은 내용을 한 번 더 확인합니다."]);
         if (!Confirm()) return Stop(history, "연결 통로 만들기를 취소함");
@@ -202,7 +203,9 @@ internal static class InstallWizard
         using (var hold = new Lifetime.WslLifetimeKeeper(choices.Distro))
         {
             hold.Start();
-            var fr = Elevation.RunSelfElevated("forward", "apply", "--wsl-ip", wslIp.ToString(), "--port", choices.ListenPort.ToString(CultureInfo.InvariantCulture), "--distro", choices.Distro, "--host-key", hostKey!, "--pause-at-end");
+            string[] fargs = ["forward", "apply", "--wsl-ip", wslIp.ToString(), "--port", choices.ListenPort.ToString(CultureInfo.InvariantCulture), "--distro", choices.Distro, "--host-key", hostKey!, "--pause-at-end",
+                .. (choices.Services ?? []).SelectMany(s => new[] { "--service", string.Create(CultureInfo.InvariantCulture, $"{s.Name}:{s.ListenPort}:{s.ConnectPort}") })];
+            var fr = Elevation.RunSelfElevated(fargs);
             hold.Release();
             if (!fr.Started) return Stop(history, fr.Error!);
             history.Detail("종료코드", fr.ExitCode.ToString(CultureInfo.InvariantCulture));
