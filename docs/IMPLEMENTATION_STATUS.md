@@ -11,7 +11,7 @@
 | M2 솔루션·doctor·plan·상태·단위 테스트 | **완료** | 빌드 경고 0, 단위 테스트 88/88 통과, G2 실기 doctor/plan/status 확인 |
 | M3 권한 분리·WSL 수명 POC | **진행 중** | 코드·테스트 완료(단위 135, 통합 5 통과). WSL 수명 실기 POC PASS(keeper 방식). 서비스 컨텍스트·일반 계정 POC는 승인 대기 |
 | M4 SSH·포워딩·방화벽 | **진행 중** | WSL OpenSSH(사용자 sudo) PASS, `forward apply`(portproxy 1004→22, LAN 한정 규칙) G2 로컬 검증 PASS. 다른 LAN PC 비밀번호·공개키 인증 PASS. 비밀번호 로그인은 사용자 결정으로 유지(ADR 0005), 제품에는 `--ssh-auth` 선택 옵션. Windows 계정·RDP는 기존 값을 유지하므로 변경 없음 |
-| M5 자동 실행·복구·pause·제거 | **진행 중** | 설치·pause/resume(T16)·재부팅 후 로그인 복구(T15, 수신 자가 복구 수정 포함) PASS. 남은 것: 재부팅 직후 서비스 타이머 경로 확인, WSL 주소 변경(T11) 실기, autostart remove 실기 |
+| M5 자동 실행·복구·pause·제거 | **진행 중** | 설치·pause/resume(T16)·재부팅 후 복구(T15: 로그인 전 수신 자가 복구 + 로그인 후 에이전트) PASS. 남은 것: WSL 주소 변경(T11) 실기, autostart remove 실기 |
 | M6~M7 | 대기 | — |
 
 ## 보존 대상 (변경 금지)
