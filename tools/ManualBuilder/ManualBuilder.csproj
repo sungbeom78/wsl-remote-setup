@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 설치 매뉴얼(pptx) 생성 도구. 제품 솔루션(slnx)에 넣지 않으며 최종 사용자 PC에 필요 없다. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <AnalysisLevel>none</AnalysisLevel>
+    <NoWarn>$(NoWarn);CA1305;CA1307;CA1310</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 생성한 pptx의 스키마 검증용(개발 도구 전용) -->
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.3.0" />
+    <!-- 미리보기 PNG(대략 렌더링, 글자 넘침 점검용) -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

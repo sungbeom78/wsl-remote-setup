@@ -135,3 +135,13 @@
 ## 참고
 
 - 프로젝트 실제 경로는 `C:\project\wsl-remote-setup`이다. 문서가 제안한 `C:\projects\…`와 다르지만 현재 경로를 유지한다.
+
+## 설치 매뉴얼 (2026-10-19)
+
+- `tools/ManualBuilder`: 매뉴얼 pptx 생성 도구다. 제품 솔루션 밖에 있고, 개발 PC에서만 쓴다.
+  - OOXML을 직접 쓰고 OpenXML SDK로 스키마를 검증한다(오류 0건).
+  - 대략적인 미리보기 PNG를 그려 글자 넘침을 점검한다(넘침 0건).
+- 생성 명령: `dotnet run --project tools/ManualBuilder -- artifacts/manual/WSL_Remote_Setup_설치매뉴얼.pptx [미리보기폴더]`
+- 배포 묶음: `artifacts/release/`에 `WslRemoteSetup.exe`(e420717)와 매뉴얼(14장)이 있다.
+- 이 PC에 PowerPoint와 LibreOffice가 없어 실제 PowerPoint 렌더링은 확인하지 못했다(NOT_TESTED).
+- 다음: 사용자가 매뉴얼대로 G2에서 되돌리기 → 재설치를 직접 시험한다.
