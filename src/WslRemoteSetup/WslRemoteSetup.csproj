@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RootNamespace>WslRemoteSetup</RootNamespace>
+    <AssemblyName>WslRemoteSetup</AssemblyName>
+    <Version>0.1.0</Version>
+    <InformationalVersion>0.1.0-m2</InformationalVersion>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- 단일 EXE 배포 설정은 publish 시에만 적용 (DEVELOPMENT_PLAN 10절) -->
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WslRemoteSetup.Core\WslRemoteSetup.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

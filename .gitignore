@@ -1,0 +1,20 @@
+# 현장 환경 보고·개발 로그 (식별 정보 포함)
+.local/
+
+# 빌드 산출물
+artifacts/
+bin/
+obj/
+*.user
+.vs/
+
+# 비밀 파일
+*.pfx
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*.secret
+secrets.*
+.env
+.env.*

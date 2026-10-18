@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- 순수 정책·상태 라이브러리: Windows API에 의존하지 않아 시스템 변경 없이 테스트한다. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>WslRemoteSetup.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="WslRemoteSetup.UnitTests" />
+  </ItemGroup>
+
+</Project>

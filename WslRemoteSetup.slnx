@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WslRemoteSetup.Core/WslRemoteSetup.Core.csproj" />
+    <Project Path="src/WslRemoteSetup/WslRemoteSetup.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WslRemoteSetup.UnitTests/WslRemoteSetup.UnitTests.csproj" />
+  </Folder>
+</Solution>
