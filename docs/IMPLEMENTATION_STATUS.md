@@ -13,7 +13,7 @@
 | M4 SSH·포워딩·방화벽 | **진행 중** | WSL OpenSSH(사용자 sudo) PASS, `forward apply`(portproxy 1004→22, LAN 한정 규칙) G2 로컬 검증 PASS. 다른 LAN PC 비밀번호·공개키 인증 PASS. 비밀번호 로그인은 사용자 결정으로 유지(ADR 0005), 제품에는 `--ssh-auth` 선택 옵션. Windows 계정·RDP는 기존 값을 유지하므로 변경 없음 |
 | M5 자동 실행·복구·pause·제거 | **진행 중** | 설치·pause/resume(T16)·재부팅 후 복구(T15: 로그인 전 수신 자가 복구 + 로그인 후 에이전트) PASS. 남은 것: WSL 주소 변경(T11) 실기, autostart remove 실기 |
 | M5+ 사용자 흐름 | **코드 완료** | 설치 질문(포트 등, Enter=기본값)·포트 추천, DHCP 경고·주소 따라가기(ADR 0007), 통합 설치 마법사 `install`/`resume`, 단계별 되돌리기 `uninstall`, 쉬운 status, 문의 채널. 실기: 신규 PC(M7)에서 전 과정 확인 필요 |
-| 후속 범위 | **부분 완료** | 여러 서비스 포트·고정 IP 마법사 코드 완료(실기 미검증). 로그인 전 무인 실행 POC는 G2 내부 경로 PASS·외부 LAN FAIL로 **종료**(1.0은 로그인 후 범위 유지) |
+| 후속 범위 | **부분 완료** | 여러 서비스 포트·고정 IP 마법사 코드 완료(실기 미검증). 로그인 전 무인 실행: 시험 작업(BootTrigger+S4U)으로 **외부 LAN SSH PASS**(22:00 재시험, 이전 FAIL은 접속 주소 오기로 정정). 제품 반영 여부 결정 대기 |
 | 다음 | **진행** | ADR 0009: ① `export-client` G2 실기 PASS ② `client` 코드 완료(노트북 실기 대기) ③ win-arm64 단일 EXE 게시 PASS(ARM 실행 NOT_TESTED) ④ 절전 점검·`power keep-awake` G2 적용 PASS. POC 부팅 작업 제거 완료. 설치본(Program Files)은 이전 빌드 — 재설치 시 최신 반영 |
 | M6~M7 | 대기 | M7: 깨끗한 Windows에서 EXE 하나로 install → status → uninstall |
 
