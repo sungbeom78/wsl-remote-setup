@@ -111,6 +111,12 @@ internal static class StatusCommand
                 }
             }
             catch (Exception ex) when (ex is IOException or JsonException) { h.Note($"에이전트 상태 파일 읽기 실패: {ex.Message}"); }
+            // 다른 방식(예: S4U·세션 0)으로 시작된 에이전트는 일반 권한으로 명령줄을 읽을 수 없다. 1분 주기 기록이 최근이면 실행 중으로 본다.
+            if (agentRunning == false && lastCheck is { } lc2 && now - lc2 < TimeSpan.FromMinutes(3))
+            {
+                agentRunning = true;
+                h.Note("에이전트 프로세스는 확인하지 못했지만 최근 점검 기록으로 실행 중으로 판단");
+            }
             h.Detail("에이전트", $"실행={agentRunning}, 멈춤={paused}, 마지막 점검={lastCheck:yyyy-MM-dd HH:mm:ss}, 결과={lastCode}, 연속 실패={failures}");
         }
 

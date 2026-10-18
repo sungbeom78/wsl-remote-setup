@@ -362,6 +362,20 @@ internal static class AutostartCommand
             await runner.RunAsync(new CommandSpec(Schtasks, ["/End", "/TN", taskName]) { Timeout = TimeSpan.FromSeconds(20) });
             await runner.RunAsync(new CommandSpec(Schtasks, ["/Delete", "/TN", taskName, "/F"]) { Timeout = TimeSpan.FromSeconds(20) });
             resources.RemoveAll(x => x.Kind == "scheduled-task" && x.Key == taskName);
+            // /End는 conhost만 끝내고 그 아래 에이전트(세션 0)는 남을 수 있다(G2 실측). 남으면 단일 실행 잠금 때문에
+            // 로그인 자동 실행 에이전트가 시작하지 못하므로, 세션 0의 우리 에이전트를 끝내고 로그인 작업을 다시 시작한다.
+            var orphans = SessionZeroAgents();
+            foreach (var pid in orphans)
+            {
+                history.Note($"시험 작업이 남긴 에이전트 종료: PID {pid}");
+                try { System.Diagnostics.Process.GetProcessById(pid).Kill(entireProcessTree: true); } catch (ArgumentException) { } catch (InvalidOperationException) { }
+            }
+            if (orphans.Count > 0)
+            {
+                var logonTask = LogonTaskName(state.InstallationId);
+                var run = await runner.RunAsync(new CommandSpec(Schtasks, ["/Run", "/TN", logonTask]) { Timeout = TimeSpan.FromSeconds(20) });
+                history.Detail("로그인 작업 재시작", $"{logonTask} exit={run.ExitCode}");
+            }
             Ui.Line("✔ 지웠습니다.");
         }
         store.Save(state with { ResourceOwnership = resources });
@@ -423,6 +437,21 @@ internal static class AutostartCommand
                 }
             Thread.Sleep(500);
         }
+    }
+
+    private static string LogonTaskName(Guid installationId) => $@"\WslRemoteSetup\Agent-{installationId.ToString("N")[..8]}";
+
+    /// <summary>세션 0에서 실행 중인 우리 설치 경로 에이전트(로그인 전 시험 작업이 남긴 것). 관리자 권한에서만 명령줄을 읽을 수 있다.</summary>
+    private static List<int> SessionZeroAgents()
+    {
+        var list = new List<int>();
+        using var s = new ManagementObjectSearcher("SELECT ProcessId, SessionId, ExecutablePath, CommandLine FROM Win32_Process WHERE Name='WslRemoteSetup.exe'");
+        foreach (ManagementObject m in s.Get())
+            if (Convert.ToInt32(m["SessionId"], CultureInfo.InvariantCulture) == 0
+                && string.Equals(m["ExecutablePath"] as string, ProtectedPaths.InstalledExe, StringComparison.OrdinalIgnoreCase)
+                && (m["CommandLine"] as string ?? "").Contains(" agent ", StringComparison.Ordinal))
+                list.Add(Convert.ToInt32(m["ProcessId"], CultureInfo.InvariantCulture));
+        return list;
     }
 
     private static List<int> OurProcesses()
