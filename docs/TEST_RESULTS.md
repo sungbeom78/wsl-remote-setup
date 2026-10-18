@@ -222,3 +222,15 @@
 | 추가 기록 | PASS | `~/.local/share/wsl-remote-setup/added-keys`에 지문과 설치 ID를 남김 |
 | 포워딩 유지 | PASS | WSL eth0 172.24.220.111로 변화 없음. 1004 경유 배너 정상 |
 | 외부 공개키 로그인 | NOT_TESTED | 사용자 확인 대기 |
+
+## 2026-10-18 14:08 — 외부 공개키 로그인 (사용자 수행)
+
+- 클라이언트: `laptop-1`. 명령: `ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no G2`
+- 첫 시도는 클라이언트 config에 `Port 7389`(RDP 포트)를 적어 `Connection reset`으로 실패했다. `Port 1004`로 고친 뒤 성공했다. 서버는 바꾸지 않았다.
+
+| 항목 | 결과 | 실제값 |
+|---|---|---|
+| 공개키만으로 로그인 | PASS | 비밀번호 질문 없이 셸 진입 |
+| 서버 로그 | PASS | `Accepted publickey for linux_admin from 172.24.208.1 … ED25519 SHA256:rLsuV2GOHCsNqErpHrCv3cIM+P+WdqPj8PrhG9W5Zko` |
+| 관찰: 접속 출발지 주소 | 기록 | portproxy를 거치면 sshd에 보이는 출발지가 항상 172.24.208.1(WSL 호스트)이다. 출발지 IP 제한은 sshd가 아니라 Windows 방화벽(192.168.1.0/24)에서 한다 |
+| 관찰: host key 확인 부작용 | 기록 | 지문 확인용 접속이 sshd 로그에 `Invalid user wrs-hostkey-probe`로 남는다. 의도된 동작이며 인증은 시도하지 않는다 |
