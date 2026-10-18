@@ -11,6 +11,8 @@
     <InvariantGlobalization>false</InvariantGlobalization>
     <!-- 단일 EXE 배포 설정은 publish 시에만 적용 (DEVELOPMENT_PLAN 10절) -->
     <SelfContained>false</SelfContained>
+    <!-- LibraryImport 소스 생성기(파이프 호출자 SID 확인 P/Invoke)에 필요 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

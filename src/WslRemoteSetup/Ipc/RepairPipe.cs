@@ -94,24 +94,18 @@ public sealed class RepairPipeServer(string pipeName, PipeSecurity security, Rep
 
         await server.WaitForConnectionAsync(ct).ConfigureAwait(false);
 
-        string? callerSid = null;
-        try
-        {
-            server.RunAsClient(() =>
-            {
-                using var id = WindowsIdentity.GetCurrent(TokenAccessLevels.Query);
-                callerSid = id.User?.Value;
-            });
-        }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(ReadTimeout);
         RepairResponse response;
         try
         {
             var bytes = await RepairPipe.ReadMessageAsync(server, RepairRequest.MaxBytes, timeout.Token).ConfigureAwait(false);
+
+            // 명명된 파이프 가장은 클라이언트 데이터를 읽은 뒤에만 가능하다(ImpersonateNamedPipeClient 규칙).
+            string? callerSid = null;
+            try { callerSid = PipeCaller.GetClientSid(server.SafePipeHandle); }
+            catch (System.ComponentModel.Win32Exception) { callerSid = null; } // 신원 미확인 → 검증기에서 거부
+
             if (bytes is null)
                 response = handler(callerSid, null, "요청 크기 초과");
             else if (RepairRequest.TryParse(bytes, out var request, out var error))

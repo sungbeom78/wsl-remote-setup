@@ -253,3 +253,20 @@
 | 단일 EXE publish | PASS | self-contained win-x64 73.2 MB, SHA-256 `9a2d6f0b…6a10299`, 버전 `0.1.0-m2+7a3997e` |
 | `autostart plan` | PASS | 적용 가능. 시스템 변경 없음 |
 | 서비스·로그온 작업 실기 | PENDING | 승인 대기 |
+
+## 2026-10-18 — M5 autostart install 실기 (사용자 승인) 및 결함
+
+- 실행: 관리자 창. 사용자가 계획을 확인하고 `Y`를 입력했다. 로그: `.local/logs/M5_autostart_install_*.log`
+
+| 항목 | 결과 | 실제값 |
+|---|---|---|
+| 설치 5단계 | PASS | 실행 파일, 정책, 서비스, 로그온 작업, /Run 모두 완료. exit 0 |
+| 서비스 | PASS | WslRemoteSetupNet Running, Auto, LocalSystem, `"C:\Program Files\WslRemoteSetup\WslRemoteSetup.exe" service` |
+| 로그온 작업 | PASS | Running, Interactive only, Run As ownerAdmin |
+| 설치 파일 ACL | PASS | SYSTEM·Administrators Full, Users·AppPackages 읽기만 |
+| 에이전트 keeper | PASS | Ubuntu-24.04 Running, 1004 경유 배너 정상 |
+| 보존 확인 | PASS | 192.168.1.222/24 Manual, RDP 7389 |
+| **서비스의 호출자 확인** | **FAIL → 수정** | 서비스 로그 `caller=`(빈 값) → 모든 요청 Denied(안전 실패, 포워딩은 변경되지 않음). 원인: 파이프에서 데이터를 읽기 전에 가장을 시도함. 또 .NET `GetCurrent`는 SYSTEM에서 Identification 토큰을 열지 못함. 수정: 읽은 뒤 `ImpersonateNamedPipeClient` → `OpenThreadToken(OpenAsSelf=TRUE)` → `RevertToSelf` |
+| 결함 예방 | 코드 반영 | 실행 파일을 교체하기 전에 작업 종료와 남은 에이전트 정리. keeper를 Job 개체(KILL_ON_JOB_CLOSE)에 묶음 |
+| 화면·기록 개선 | 코드 반영 | ADR 0006. 단위 190 / 통합 9 PASS. 새 publish SHA-256 `6fbca2c8…630c1ee` |
+| 수정본 재설치 | PENDING | 승인 대기 |

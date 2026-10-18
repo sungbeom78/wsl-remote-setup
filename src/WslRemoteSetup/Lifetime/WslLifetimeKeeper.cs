@@ -44,6 +44,7 @@ public sealed class WslLifetimeKeeper : IDisposable
         foreach (var a in new[] { "--distribution", _distro, "--exec", "/bin/sleep", "infinity" })
             psi.ArgumentList.Add(a);
         _process = Process.Start(psi) ?? throw new InvalidOperationException("wsl.exe를 시작하지 못했습니다.");
+        ChildProcessJob.Assign(_process); // 에이전트가 강제 종료돼도 keeper가 남지 않게 한다.
         // 출력은 읽어 버려서 파이프가 차지 않게 한다. stdin은 열어 둔다(닫으면 즉시 끝나는 클라이언트가 있을 수 있음).
         _ = _process.StandardOutput.BaseStream.CopyToAsync(Stream.Null);
         _ = _process.StandardError.BaseStream.CopyToAsync(Stream.Null);

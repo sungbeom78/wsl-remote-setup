@@ -2,12 +2,18 @@ using System.Globalization;
 using System.Net;
 using System.Runtime.Versioning;
 using System.Security.Principal;
+using System.Text.Json;
 using WslRemoteSetup.Core;
+using WslRemoteSetup.Core.Execution;
 using WslRemoteSetup.Core.Forwarding;
 using WslRemoteSetup.Core.Model;
+using WslRemoteSetup.Core.Reporting;
+using WslRemoteSetup.Core.Ssh;
 using WslRemoteSetup.Core.State;
 using WslRemoteSetup.Core.Validation;
 using WslRemoteSetup.Probing;
+using WslRemoteSetup.Reporting;
+using WslRemoteSetup.Service;
 
 namespace WslRemoteSetup.Forwarding;
 
@@ -21,27 +27,26 @@ internal sealed record ForwardOptions(
     string Distro);
 
 /// <summary>
-/// `forward plan|apply|remove` — Windows TCP 수신 → WSL SSH 포워딩과 LAN 한정 방화벽 규칙(M4).
-/// Probe → Plan → Validate → 승인(대화형 입력) → Apply → Verify. apply/remove는 승격 프로세스에서만 동작한다.
+/// `forward plan|apply|remove` — 외부 접속을 WSL SSH로 전달하는 통로와 LAN 한정 방화벽 규칙(M4).
+/// 화면에는 쉬운 말, 설치 ID·서버 키·규칙 이름 등 기술 값은 작업 기록에 남긴다(ADR 0006).
+/// apply/remove는 관리자 창에서만 동작한다.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal static class ForwardCommand
 {
-    public static async Task<int> RunAsync(ForwardOptions o)
+    public static async Task<int> RunAsync(ForwardOptions o) => o.Action switch
     {
-        return o.Action switch
-        {
-            "plan" => await PlanOrApplyAsync(o, apply: false),
-            "apply" => await PlanOrApplyAsync(o, apply: true),
-            "remove" => await RemoveAsync(),
-            _ => Usage(),
-        };
-    }
+        "plan" => await PlanOrApplyAsync(o, apply: false),
+        "apply" => await PlanOrApplyAsync(o, apply: true),
+        "remove" => await RemoveAsync(),
+        _ => Usage(),
+    };
 
     private static int Usage()
     {
-        Console.Error.WriteLine("사용: forward plan|apply --installation-id <guid> --host-key SHA256:… [--wsl-ip <ipv4>] [--listen <ipv4>] [--port 1004]");
-        Console.Error.WriteLine("      forward remove");
+        Console.Error.WriteLine("사용: forward plan            (일반 창: 현재 상태로 계획 확인)");
+        Console.Error.WriteLine("      forward apply --wsl-ip <plan이 알려 준 값>   (관리자 창)");
+        Console.Error.WriteLine("      forward remove          (관리자 창)");
         return App.ExitUsage;
     }
 
@@ -49,102 +54,147 @@ internal static class ForwardCommand
     {
         if (apply && !WindowsForwarding.IsElevated())
         {
-            Console.Error.WriteLine("[ELEVATION_REQUIRED] forward apply는 승인된 관리자(UAC) 프로세스에서 실행해야 합니다.");
+            Console.Error.WriteLine("관리자 권한이 필요합니다. 관리자 창(UAC 승인)에서 다시 실행해 주세요.");
             return App.ExitUsage;
         }
 
+        var history = Ui.OpenHistory(apply ? "SSH 연결 통로 적용" : "SSH 연결 통로 계획 확인");
         var runner = WindowsForwarding.Runner();
         var store = new StateStore(WindowsForwarding.StatePath);
         var loaded = store.Load();
         if (loaded.Outcome is LoadOutcome.Corrupt or LoadOutcome.UnsupportedVersion)
         {
-            Console.Error.WriteLine($"[STATE_{loaded.Outcome.ToString().ToUpperInvariant()}] {loaded.Error}. 상태 파일을 초기화하지 않습니다.");
+            Ui.Blocked("설정 기록 파일을 읽을 수 없습니다. 기록을 지우지 않고 멈춥니다.");
+            history.Note($"상태 파일 {loaded.Outcome}: {loaded.Error}");
+            history.Finish("중단");
             return App.ExitChecksFailed;
         }
         var state = loaded.State;
-        var installationId = o.InstallationId ?? state?.InstallationId;
-        if (installationId is null) { Console.Error.WriteLine("--installation-id가 필요합니다."); return App.ExitUsage; }
+        var installationId = o.InstallationId ?? state?.InstallationId ?? Guid.NewGuid();
         if (state is not null && state.InstallationId != installationId)
         {
-            Console.Error.WriteLine($"[INSTALLATION_MISMATCH] 기존 상태의 설치 ID({state.InstallationId})와 다릅니다.");
+            Ui.Blocked("지정한 설치 정보가 이 PC의 기록과 다릅니다.");
+            history.Finish("중단: 설치 ID 불일치");
             return App.ExitChecksFailed;
         }
-        if (o.HostKey is null) { Console.Error.WriteLine("--host-key SHA256:… 가 필요합니다(WSL SSH 설치 시 출력된 ED25519 지문)."); return App.ExitUsage; }
 
-        Console.WriteLine("진단 중(읽기 전용)...");
+        Console.WriteLine("  현재 상태를 확인하는 중입니다(아무것도 바꾸지 않습니다)...");
+        history.Begin("현재 상태 확인");
+        var hostKey = o.HostKey ?? state?.SshHostKey;
+        if (hostKey is null && !apply) hostKey = await ReadRecordedHostKeyAsync(runner, o.Distro);
+        if (!HostKeyFingerprint.IsWellFormed(hostKey))
+        {
+            Ui.Blocked("WSL SSH 서버 확인 정보를 찾지 못했습니다. WSL에 SSH 서버를 먼저 설치해 주세요.");
+            history.Fail("WSL SSH 서버 키 기록 없음");
+            history.Finish("중단");
+            return App.ExitChecksFailed;
+        }
+
         var snapshot = await new WindowsProbe(runner).CollectAsync();
         var listen = o.ListenAddress ?? DefaultListenAddress(snapshot);
-        if (listen is null) { Console.Error.WriteLine("수신 IPv4를 결정할 수 없습니다. --listen으로 지정하세요."); return App.ExitUsage; }
+        if (listen is null)
+        {
+            Ui.Blocked("외부에서 접속할 이 PC의 주소를 정하지 못했습니다(연결된 네트워크가 없거나 여러 개).");
+            history.Finish("중단: 수신 주소 미정");
+            return App.ExitUsage;
+        }
 
         IPAddress? target;
         if (o.WslAddress is not null)
         {
-            if (!InputValidator.TryParseIPv4(o.WslAddress, out var t)) { Console.Error.WriteLine("--wsl-ip 형식 오류"); return App.ExitUsage; }
+            if (!InputValidator.TryParseIPv4(o.WslAddress, out var t)) { Ui.Blocked("WSL 주소 형식이 올바르지 않습니다."); return App.ExitUsage; }
             target = t;
         }
         else if (apply)
         {
-            Console.Error.WriteLine("apply는 --wsl-ip를 명시해야 합니다(관리자 프로세스에서 배포판을 실행하지 않음). 먼저 일반 세션에서 plan을 실행하세요.");
+            Ui.Blocked("관리자 창에서는 WSL을 직접 실행하지 않습니다. 먼저 일반 창에서 'forward plan'을 실행하고, 안내된 명령을 관리자 창에서 실행해 주세요.");
+            history.Finish("중단: WSL 주소 미지정");
             return App.ExitUsage;
         }
         else
         {
-            Console.WriteLine($"소유자 세션에서 {o.Distro} 주소 조회(배포판이 기동될 수 있음)...");
             target = await WindowsForwarding.ReadWslAddressAsync(runner, o.Distro);
-            if (target is null) { Console.Error.WriteLine("WSL 주소를 확인하지 못했습니다."); return App.ExitChecksFailed; }
+            if (target is null) { Ui.Blocked("WSL 주소를 확인하지 못했습니다. WSL이 실행되는지 확인해 주세요."); history.Finish("중단"); return App.ExitChecksFailed; }
         }
 
         using var id = WindowsIdentity.GetCurrent();
-        var facts = await CollectFactsAsync(runner, snapshot, installationId.Value, id.User!.Value, listen, o.ListenPort, target, o.HostKey, state);
+        var facts = await CollectFactsAsync(runner, snapshot, installationId, id.User!.Value, listen, o.ListenPort, target, hostKey!, state);
         var plan = ForwardingPlanBuilder.Build(facts);
-        PrintPlan(plan, facts);
+        LogPlan(history, plan, facts);
+        history.Done(plan.CanApply ? "진행 가능" : "진행 불가");
+        PrintPlan(plan, facts, apply);
 
         if (!apply)
         {
-            Console.WriteLine();
-            Console.WriteLine("이 명령은 시스템을 변경하지 않았습니다.");
-            Console.WriteLine($"적용 명령(승인 후 관리자): forward apply --installation-id {installationId:D} --host-key {o.HostKey} --wsl-ip {target} --listen {listen} --port {o.ListenPort}");
+            if (plan.CanApply && plan.HasChanges)
+            {
+                Console.WriteLine();
+                Ui.Line("적용하려면 관리자 창에서 아래 명령을 실행하세요:");
+                Ui.Line($"  WslRemoteSetup.exe forward apply --wsl-ip {target}");
+            }
+            history.Finish("계획 확인(변경 없음)");
+            Ui.HistoryHint(history);
             return plan.CanApply ? App.ExitOk : App.ExitChecksFailed;
         }
 
-        if (!plan.CanApply) return App.ExitChecksFailed;
+        if (!plan.CanApply) { history.Finish("진행 불가"); Ui.HistoryHint(history); return App.ExitChecksFailed; }
         if (!plan.HasChanges)
         {
-            Console.WriteLine("변경할 항목이 없습니다. 검증만 수행합니다.");
-            return await VerifyAsync(runner, facts) ? App.ExitOk : App.ExitChecksFailed;
+            Ui.Line("바꿀 것이 없습니다. 연결 상태만 확인합니다.");
+            var verified = await VerifyAsync(runner, facts, history);
+            history.Finish(verified ? "변경 없음, 확인 통과" : "변경 없음, 확인 실패");
+            Ui.HistoryHint(history);
+            return verified ? App.ExitOk : App.ExitChecksFailed;
         }
-        if (!Confirm(out var confirmExit)) return confirmExit;
+        if (!ConfirmPrompt.Ask(out var confirmExit)) { history.Finish("사용자가 취소함(변경 없음)"); return confirmExit; }
+        history.Note("사용자가 [Y/n] 확인에서 진행을 선택함");
 
         WindowsForwarding.EnsureProtectedStateDirectory();
         var now = DateTimeOffset.UtcNow;
-        state ??= new InstallState { InstallationId = installationId.Value, AppVersion = AppVersion() };
+        state ??= new InstallState { InstallationId = installationId, AppVersion = AppVersion() };
         var resources = state.ResourceOwnership.ToList();
         var before = new Dictionary<string, string>(state.BeforeSnapshots);
         var key = string.Create(CultureInfo.InvariantCulture, $"{listen}:{o.ListenPort}");
-
+        var total = (plan.PortProxy!.Kind is ReconcileKind.Add or ReconcileKind.Update ? 1 : 0) + (plan.Firewall == FirewallActionKind.Create ? 1 : 0);
+        var n = 0;
+        Console.WriteLine();
         try
         {
-            if (plan.PortProxy!.Kind is ReconcileKind.Add or ReconcileKind.Update)
+            if (plan.PortProxy.Kind is ReconcileKind.Add or ReconcileKind.Update)
             {
-                before.TryAdd($"portproxy:{key}", plan.PortProxy.Existing is { } ex ? $"{ex.ConnectAddress}:{ex.ConnectPort}" : "(none)");
-                await WindowsForwarding.ApplyPortProxyAsync(runner, plan.PortProxy);
-                resources.RemoveAll(r => r.Kind == ResourceKinds.PortProxy && r.Key == key);
-                resources.Add(new OwnedResource(ResourceKinds.PortProxy, key, "Windows → WSL SSH", now)
+                Ui.Progress(++n, total, plan.PortProxy.Kind == ReconcileKind.Add ? "연결 전달 규칙 추가" : "연결 전달 규칙의 WSL 주소 갱신", () =>
                 {
-                    Value = string.Create(CultureInfo.InvariantCulture, $"{plan.PortProxy.Desired!.ConnectAddress}:{plan.PortProxy.Desired.ConnectPort}"),
-                });
-                Console.WriteLine($"  portproxy {plan.PortProxy.Kind}: {key} → {plan.PortProxy.Desired!.ConnectAddress}:{plan.PortProxy.Desired.ConnectPort}");
+                    before.TryAdd($"portproxy:{key}", plan.PortProxy.Existing is { } ex ? $"{ex.ConnectAddress}:{ex.ConnectPort}" : "(none)");
+                    history.Detail("규칙", $"{key} → {plan.PortProxy.Desired!.ConnectAddress}:{plan.PortProxy.Desired.ConnectPort}");
+                    history.Detail("이전 값", before[$"portproxy:{key}"]);
+                    WindowsForwarding.ApplyPortProxyAsync(runner, plan.PortProxy).GetAwaiter().GetResult();
+                    resources.RemoveAll(r => r.Kind == ResourceKinds.PortProxy && r.Key == key);
+                    resources.Add(new OwnedResource(ResourceKinds.PortProxy, key, "Windows → WSL SSH", now)
+                    {
+                        Value = string.Create(CultureInfo.InvariantCulture, $"{plan.PortProxy.Desired.ConnectAddress}:{plan.PortProxy.Desired.ConnectPort}"),
+                    });
+                    history.Done("적용");
+                }, history);
             }
             if (plan.Firewall == FirewallActionKind.Create)
             {
-                WindowsForwarding.CreateFirewallRule(plan.Rule!);
-                resources.RemoveAll(r => r.Kind == ResourceKinds.FirewallRule && r.Key == plan.Rule!.Name);
-                resources.Add(new OwnedResource(ResourceKinds.FirewallRule, plan.Rule!.Name, plan.Rule.Description, now)
+                Ui.Progress(++n, total, "방화벽 허용 규칙 추가(같은 공유기의 기기만)", () =>
                 {
-                    Value = $"TCP {plan.Rule.LocalAddress}:{plan.Rule.Port} from {plan.Rule.RemoteCidr} ({plan.Rule.Profile})",
-                });
-                Console.WriteLine($"  방화벽 규칙 생성: {plan.Rule.Name}");
+                    history.Detail("규칙 이름", plan.Rule!.Name);
+                    history.Detail("내용", $"TCP {plan.Rule.LocalAddress}:{plan.Rule.Port}, 원격 {plan.Rule.RemoteCidr}, 프로필 {plan.Rule.Profile}");
+                    WindowsForwarding.CreateFirewallRule(plan.Rule);
+                    resources.RemoveAll(r => r.Kind == ResourceKinds.FirewallRule && r.Key == plan.Rule.Name);
+                    resources.Add(new OwnedResource(ResourceKinds.FirewallRule, plan.Rule.Name, plan.Rule.Description, now)
+                    {
+                        Value = $"TCP {plan.Rule.LocalAddress}:{plan.Rule.Port} from {plan.Rule.RemoteCidr} ({plan.Rule.Profile})",
+                    });
+                    history.Done("적용");
+                }, history);
             }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+        {
+            Ui.Blocked(ex.Message);
         }
         finally
         {
@@ -153,26 +203,49 @@ internal static class ForwardCommand
                 Phase = InstallPhase.Verifying,
                 OwnerSid = id.User!.Value,
                 DistroName = o.Distro,
+                SshHostKey = hostKey,
                 ResourceOwnership = resources,
                 BeforeSnapshots = before,
                 ApprovalHistory = [.. state.ApprovalHistory, new ApprovalRecord(now, id.User!.Value, PlanHash(plan), ["portproxy", "firewall-ssh"])],
             });
         }
 
-        var ok = await VerifyAsync(runner, facts);
+        var ok = await VerifyAsync(runner, facts, history);
         var latest = store.Load().State!;
         store.Save(latest with
         {
             Phase = ok ? InstallPhase.AwaitingAuthenticationSetup : InstallPhase.Failed,
-            PendingAction = ok ? "다른 LAN PC에서 실제 SSH 인증 확인(공개키 전용을 선택한 경우 공개키 확인 후 비밀번호 해제)" : null,
-            LastError = ok ? null : "포워딩 사후 검증 실패",
+            PendingAction = ok ? "다른 PC에서 실제 SSH 로그인 확인" : null,
+            LastError = ok ? null : "연결 통로 사후 확인 실패",
             VerificationResults = [.. latest.VerificationResults, new VerificationRecord("forward-local", ok ? "PASS" : "FAIL", key, DateTimeOffset.UtcNow)],
         });
+        history.Finish(ok ? "성공" : "실패");
+        Ui.HistoryHint(history);
         return ok ? App.ExitOk : App.ExitChecksFailed;
     }
 
+    /// <summary>WSL 안 SSH 설치 기록(root 소유)에서 ED25519 서버 키 지문을 읽는다. 일반(소유자) 창에서만 사용.</summary>
+    private static async Task<string?> ReadRecordedHostKeyAsync(CommandRunner runner, string distro)
+    {
+        var r = await runner.RunAsync(new CommandSpec(WindowsForwarding.Wsl,
+            ["--distribution", distro, "--exec", "/bin/cat", "/var/lib/wsl-remote-setup/ssh.json"]) { Timeout = TimeSpan.FromSeconds(60) });
+        if (!r.ExitedZero) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(r.StandardOutput);
+            if (!doc.RootElement.TryGetProperty("hostKeyFingerprints", out var arr)) return null;
+            foreach (var e in arr.EnumerateArray())
+            {
+                var s = e.GetString() ?? "";
+                if (s.EndsWith("(ED25519)", StringComparison.Ordinal)) return s.Split(' ')[0];
+            }
+        }
+        catch (JsonException) { }
+        return null;
+    }
+
     private static async Task<ForwardingFacts> CollectFactsAsync(
-        Core.Execution.ICommandRunner runner, EnvironmentSnapshot s, Guid installationId, string ownerSid,
+        ICommandRunner runner, EnvironmentSnapshot s, Guid installationId, string ownerSid,
         string listen, int port, IPAddress target, string hostKey, InstallState? state)
     {
         var banner = await WindowsForwarding.ReadBannerAsync(target, DesiredConfiguration.DefaultWslSshPort, TimeSpan.FromSeconds(5));
@@ -196,140 +269,166 @@ internal static class ForwardCommand
         };
     }
 
-    private static async Task<bool> VerifyAsync(Core.Execution.ICommandRunner runner, ForwardingFacts f)
+    private static void LogPlan(OperationHistory h, ForwardingPlan plan, ForwardingFacts f)
+    {
+        h.Detail("설치 ID", f.InstallationId.ToString("D"));
+        h.Detail("소유자 SID", f.OwnerSid);
+        h.Detail("요약", plan.Summary);
+        h.Detail("WSL 호스트 대역", f.WslHostCidr?.ToString());
+        h.Detail("SSH 배너", f.EndpointBanner);
+        h.Detail("관찰한 서버 키", string.Join(", ", f.ObservedHostKeys.Select(k => $"{k.KeyType} {k.Fingerprint}")));
+        h.Detail("등록된 서버 키", f.ExpectedHostKey);
+        h.Detail("연결 전달", plan.PortProxy is { } p ? $"{p.Kind}: {p.Reason}" : null);
+        h.Detail("방화벽", plan.Rule is { } r ? $"{plan.Firewall}: {r.Name} / TCP {r.LocalAddress}:{r.Port} / {r.RemoteCidr} / {r.Profile}" : plan.Firewall.ToString());
+        foreach (var w in plan.Warnings) h.Note($"주의: {w}");
+        foreach (var b in plan.Blockers) h.Note($"진행 불가 사유: {b}");
+    }
+
+    private static void PrintPlan(ForwardingPlan plan, ForwardingFacts f, bool apply)
+    {
+        Ui.Title(apply ? "SSH 연결 통로 설정" : "SSH 연결 통로 계획 (아직 아무것도 바꾸지 않았습니다)");
+        Ui.Line($"외부에서 접속할 주소: {f.ListenAddress}, {f.ListenPort}번");
+        Ui.Line("연결될 곳: 이 PC 안의 WSL(Ubuntu) SSH 서버");
+        var keyOk = f.ObservedHostKeys.Any(k => k.Fingerprint == f.ExpectedHostKey);
+        Ui.Line($"WSL SSH 서버 확인: {(keyOk ? "처음 설치 때 등록한 서버와 같습니다" : "등록한 서버와 다르거나 확인하지 못했습니다")}");
+        var lan = plan.Rule?.RemoteCidr is { } cidr ? LanRange(cidr) : "같은 공유기에 연결된 기기";
+        Console.WriteLine();
+        Ui.Line("할 일");
+        Ui.Item(1, "연결 전달 규칙", plan.PortProxy?.Kind switch
+        {
+            ReconcileKind.Add => "새로 추가",
+            ReconcileKind.Update => "WSL 주소 갱신",
+            ReconcileKind.NoChange => "변경 없음",
+            _ => "진행 불가",
+        }, $"외부 {f.ListenPort}번으로 들어온 접속을 WSL SSH로 전달");
+        Ui.Item(2, "방화벽 허용 규칙", plan.Firewall switch
+        {
+            FirewallActionKind.Create => "새로 추가",
+            FirewallActionKind.NoChange => "변경 없음",
+            _ => "진행 불가",
+        }, $"{lan}만 허용, '개인 네트워크'로 연결됐을 때만");
+        Console.WriteLine();
+        Ui.Line("바뀌지 않는 것: 이 PC의 IP 주소·DNS·원격 데스크톱 설정·기존 방화벽 규칙");
+        foreach (var w in plan.Warnings) Ui.Note(w);
+        Console.WriteLine();
+        if (plan.CanApply) Ui.Line(plan.HasChanges ? "확인 결과: 진행할 수 있습니다." : "확인 결과: 이미 설정되어 있습니다.");
+        else foreach (var b in plan.Blockers) Ui.Blocked(b);
+    }
+
+    /// <summary>"192.168.1.0/24" → "같은 공유기에 연결된 기기(192.168.1.0~192.168.1.255)".</summary>
+    private static string LanRange(string cidr)
+    {
+        if (!Core.Network.Ipv4Cidr.TryParse(cidr, out var c)) return "같은 공유기에 연결된 기기";
+        var start = c.Network;
+        var end = start | (c.PrefixLength == 0 ? uint.MaxValue : (uint.MaxValue >> c.PrefixLength));
+        static string Ip(uint v) => $"{v >> 24}.{(v >> 16) & 255}.{(v >> 8) & 255}.{v & 255}";
+        return $"같은 공유기에 연결된 기기({Ip(start)}~{Ip(end)})";
+    }
+
+    private static async Task<bool> VerifyAsync(ICommandRunner runner, ForwardingFacts f, OperationHistory history)
     {
         Console.WriteLine();
-        Console.WriteLine("사후 검증(이 PC 안에서):");
+        Ui.Line("설정 후 확인(이 PC 안에서):");
+        history.Begin("설정 후 확인");
         var results = new List<CheckResult>();
         var snapshot = await new WindowsProbe(runner).CollectAsync();
         var proxy = snapshot.PortProxies?.FirstOrDefault(p => p.ListenAddress == f.ListenAddress && p.ListenPort == f.ListenPort);
-        results.Add(proxy is not null && proxy.ConnectAddress == f.TargetAddress.ToString() && proxy.ConnectPort == f.ConnectPort
-            ? new("FWD_RULE", "portproxy 규칙", CheckStatus.Pass, $"{proxy.ListenAddress}:{proxy.ListenPort} → {proxy.ConnectAddress}:{proxy.ConnectPort}")
-            : new("FWD_RULE", "portproxy 규칙", CheckStatus.Fail, "기대한 규칙이 없습니다."));
+        var proxyOk = proxy is not null && proxy.ConnectAddress == f.TargetAddress.ToString() && proxy.ConnectPort == f.ConnectPort;
+        results.Add(new("FWD_RULE", "연결 전달 규칙", proxyOk ? CheckStatus.Pass : CheckStatus.Fail, proxyOk ? "있음" : "없음"));
+        history.Detail("연결 전달 규칙", proxy is null ? "없음" : $"{proxy.ListenAddress}:{proxy.ListenPort} → {proxy.ConnectAddress}:{proxy.ConnectPort}");
 
         var name = ForwardingPlanBuilder.RuleName(f.InstallationId, f.ListenPort);
         var rules = snapshot.FirewallRules?.Where(r => r.Name == name).ToList() ?? [];
-        results.Add(rules.Count == 1 && rules[0].Enabled
-            ? new("FWD_FIREWALL", "방화벽 규칙", CheckStatus.Pass, $"{name} [{rules[0].Profiles}/{rules[0].RemoteAddresses}]")
-            : new("FWD_FIREWALL", "방화벽 규칙", CheckStatus.Fail, $"{name} 규칙 {rules.Count}개"));
+        var fwOk = rules.Count == 1 && rules[0].Enabled;
+        results.Add(new("FWD_FIREWALL", "방화벽 허용 규칙", fwOk ? CheckStatus.Pass : CheckStatus.Fail, fwOk ? "있음" : $"{rules.Count}개"));
+        history.Detail("방화벽 규칙", fwOk ? $"{name} [{rules[0].Profiles}/{rules[0].RemoteAddresses}]" : $"{name} {rules.Count}개");
 
         var listenIp = IPAddress.Parse(f.ListenAddress);
         var banner = await WindowsForwarding.ReadBannerAsync(listenIp, f.ListenPort, TimeSpan.FromSeconds(5));
-        results.Add(banner?.StartsWith("SSH-2.0-", StringComparison.Ordinal) == true
-            ? new("FWD_BANNER", "Windows 수신 경유 SSH 배너", CheckStatus.Pass, banner)
-            : new("FWD_BANNER", "Windows 수신 경유 SSH 배너", CheckStatus.Fail, "배너 없음"));
+        var bannerOk = banner?.StartsWith("SSH-2.0-", StringComparison.Ordinal) == true;
+        results.Add(new("FWD_BANNER", $"{f.ListenPort}번으로 SSH 응답", bannerOk ? CheckStatus.Pass : CheckStatus.Fail, bannerOk ? "응답함" : "응답 없음"));
+        history.Detail("SSH 배너", banner);
 
         var keys = await WindowsForwarding.ProbeHostKeyAsync(runner, listenIp, f.ListenPort);
-        results.Add(keys.Any(k => k.Fingerprint == f.ExpectedHostKey)
-            ? new("FWD_HOSTKEY", "경유 host key 일치", CheckStatus.Pass, f.ExpectedHostKey)
-            : new("FWD_HOSTKEY", "경유 host key 일치", CheckStatus.Fail, "등록 지문과 다르거나 조회 실패"));
+        var keyOk = keys.Any(k => k.Fingerprint == f.ExpectedHostKey);
+        results.Add(new("FWD_HOSTKEY", "응답한 서버가 등록한 WSL 서버인지", keyOk ? CheckStatus.Pass : CheckStatus.Fail, keyOk ? "같음" : "다르거나 확인 못 함"));
+        history.Detail("경유 서버 키", string.Join(", ", keys.Select(k => k.Fingerprint)));
 
-        results.Add(new("SSH_LAN_AUTH", "다른 LAN PC의 실제 SSH 인증", CheckStatus.NotTested, "다른 PC에서 확인해야 합니다."));
-        results.Add(new("FWD_RESTART", "WSL 재시작 후 대상 갱신", CheckStatus.Pending, "자동 갱신은 M5에서 구현합니다. 지금은 WSL 주소가 바뀌면 forward apply를 다시 실행해야 합니다."));
+        results.Add(new("SSH_LAN_AUTH", "다른 PC에서 실제 로그인", CheckStatus.NotTested, "다른 PC에서 직접 확인해 주세요."));
         ConsoleReport.PrintChecks(results);
-        return results.All(r => r.Status != CheckStatus.Fail);
+        var ok = results.All(r => r.Status != CheckStatus.Fail);
+        if (ok) history.Done("모두 통과"); else history.Fail("일부 실패");
+        return ok;
     }
 
     private static async Task<int> RemoveAsync()
     {
         if (!WindowsForwarding.IsElevated())
         {
-            Console.Error.WriteLine("[ELEVATION_REQUIRED] forward remove는 관리자(UAC) 프로세스에서 실행해야 합니다.");
+            Console.Error.WriteLine("관리자 권한이 필요합니다. 관리자 창(UAC 승인)에서 다시 실행해 주세요.");
             return App.ExitUsage;
         }
+        var history = Ui.OpenHistory("SSH 연결 통로 제거");
         var store = new StateStore(WindowsForwarding.StatePath);
         var loaded = store.Load();
-        if (loaded.Outcome != LoadOutcome.Loaded) { Console.WriteLine("이 도구가 만든 포워딩 기록이 없습니다."); return App.ExitOk; }
+        if (loaded.Outcome != LoadOutcome.Loaded) { Ui.Line("이 도구가 만든 연결 통로가 없습니다."); history.Finish("대상 없음"); return App.ExitOk; }
         var state = loaded.State!;
         var owned = state.ResourceOwnership.Where(r => r.Kind is ResourceKinds.PortProxy or ResourceKinds.FirewallRule).ToList();
-        if (owned.Count == 0) { Console.WriteLine("제거할 도구 소유 리소스가 없습니다."); return App.ExitOk; }
+        if (owned.Count == 0) { Ui.Line("제거할 연결 통로가 없습니다."); history.Finish("대상 없음"); return App.ExitOk; }
 
-        Console.WriteLine("제거 대상(이 도구가 만든 리소스만):");
-        foreach (var r in owned) Console.WriteLine($"  {r.Kind}: {r.Key} {r.Value}");
-        if (!Confirm(out var confirmExit)) return confirmExit;
+        Ui.Title("SSH 연결 통로 제거");
+        Ui.Line("이 도구가 만든 것만 지웁니다.");
+        var n = 0;
+        foreach (var r in owned) Ui.Item(++n, r.Kind == ResourceKinds.PortProxy ? "연결 전달 규칙" : "방화벽 허용 규칙", "제거");
+        foreach (var r in owned) history.Detail(r.Kind, $"{r.Key} {r.Value}");
+        if (!ConfirmPrompt.Ask(out var confirmExit)) { history.Finish("사용자가 취소함"); return confirmExit; }
 
         var runner = WindowsForwarding.Runner();
         var snapshot = await new WindowsProbe(runner).CollectAsync();
         var remaining = state.ResourceOwnership.ToList();
         var failed = false;
+        var i = 0;
         foreach (var r in owned)
         {
+            history.Begin($"{r.Kind} 제거");
+            history.Detail("대상", r.Key);
+            Console.Write($"  [{++i}/{owned.Count}] {(r.Kind == ResourceKinds.PortProxy ? "연결 전달 규칙" : "방화벽 허용 규칙")} 제거 ... ");
             if (r.Kind == ResourceKinds.PortProxy)
             {
                 var sep = r.Key.LastIndexOf(':');
                 var addr = r.Key[..sep];
                 var port = int.Parse(r.Key[(sep + 1)..], CultureInfo.InvariantCulture);
                 var current = snapshot.PortProxies?.FirstOrDefault(p => p.ListenAddress == addr && p.ListenPort == port);
-                if (current is null) { remaining.Remove(r); Console.WriteLine($"  이미 없음: {r.Key}"); continue; }
+                if (current is null) { remaining.Remove(r); Console.WriteLine("이미 없음"); history.Skip("이미 없음"); continue; }
                 if ($"{current.ConnectAddress}:{current.ConnectPort}" != r.Value)
                 {
                     failed = true;
-                    Console.WriteLine($"  [CONFLICT] {r.Key}가 외부에서 바뀌었습니다({current.ConnectAddress}:{current.ConnectPort}). 제거하지 않습니다.");
+                    Console.WriteLine("건너뜀(다른 곳에서 바뀜)");
+                    history.Skip($"외부 변경 감지: 현재 {current.ConnectAddress}:{current.ConnectPort}, 기록 {r.Value}");
                     continue;
                 }
                 await WindowsForwarding.DeletePortProxyAsync(runner, addr, port);
                 remaining.Remove(r);
-                Console.WriteLine($"  portproxy 제거: {r.Key}");
+                Console.WriteLine("완료");
+                history.Done("제거");
             }
             else if (WindowsForwarding.RemoveFirewallRule(r.Key, state.InstallationId))
             {
                 remaining.Remove(r);
-                Console.WriteLine($"  방화벽 규칙 제거: {r.Key}");
+                Console.WriteLine("완료");
+                history.Done("제거");
             }
             else
             {
                 failed = true;
-                Console.WriteLine($"  [CONFLICT] 방화벽 규칙 {r.Key}를 안전하게 식별하지 못해 제거하지 않았습니다.");
+                Console.WriteLine("건너뜀(이 도구가 만든 규칙인지 확실하지 않음)");
+                history.Skip("규칙을 안전하게 식별하지 못함");
             }
         }
         store.Save(state with { ResourceOwnership = remaining, Phase = failed ? InstallPhase.RecoveryPlanned : InstallPhase.Planned });
+        history.Finish(failed ? "일부 건너뜀" : "완료");
+        Ui.HistoryHint(history);
         return failed ? App.ExitChecksFailed : App.ExitOk;
-    }
-
-    private static bool Confirm(out int exitCode)
-    {
-        exitCode = App.ExitOk;
-        if (Console.IsInputRedirected)
-        {
-            Console.Error.WriteLine("[UserInputRequired] 적용 확인 입력을 받을 수 없습니다.");
-            exitCode = App.ExitUserInputRequired;
-            return false;
-        }
-        Console.WriteLine();
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            Console.Write($"위 변경을 진행할까요? {Confirmation.Prompt} ");
-            switch (Confirmation.Parse(Console.ReadLine()))
-            {
-                case ConfirmAnswer.Yes:
-                    return true;
-                case ConfirmAnswer.No:
-                    Console.WriteLine("취소했습니다. 변경하지 않았습니다.");
-                    exitCode = App.ExitCanceled;
-                    return false;
-                default:
-                    Console.WriteLine("Y 또는 n으로 입력하세요(Enter = Y).");
-                    break;
-            }
-        }
-        Console.WriteLine("확인 입력이 올바르지 않아 취소했습니다. 변경하지 않았습니다.");
-        exitCode = App.ExitCanceled;
-        return false;
-    }
-
-    private static void PrintPlan(ForwardingPlan plan, ForwardingFacts f)
-    {
-        Console.WriteLine();
-        Console.WriteLine($"포워딩 계획: {plan.Summary}");
-        Console.WriteLine($"  WSL 호스트 대역: {f.WslHostCidr?.ToString() ?? "없음"}, 대상 배너: {f.EndpointBanner ?? "없음"}");
-        Console.WriteLine($"  대상 host key: {string.Join(", ", f.ObservedHostKeys.Select(k => $"{k.KeyType} {k.Fingerprint}"))}");
-        Console.WriteLine($"  기대 host key: {f.ExpectedHostKey}");
-        if (plan.PortProxy is { } p)
-            Console.WriteLine($"  portproxy: {p.Kind} — {p.Reason}{(p.Existing is { } e ? $" (현재 {e.ConnectAddress}:{e.ConnectPort})" : "")}");
-        Console.WriteLine($"  방화벽: {plan.Firewall}{(plan.Rule is { } r ? $" — '{r.Name}' TCP {r.LocalAddress}:{r.Port}, 원격 {r.RemoteCidr}, 프로필 {r.Profile}" : "")}");
-        foreach (var w in plan.Warnings) Console.WriteLine($"  [WARN] {w}");
-        foreach (var b in plan.Blockers) Console.WriteLine($"  [BLOCK] {b}");
-        Console.WriteLine(plan.CanApply ? "  → 적용 가능" : "  → 적용 불가(차단 사유 해결 필요)");
     }
 
     private static string? DefaultListenAddress(EnvironmentSnapshot s)

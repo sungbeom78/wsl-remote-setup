@@ -141,6 +141,13 @@ internal static class App
 
         var snapshot = await CollectAsync();
         var results = DoctorEvaluator.Evaluate(snapshot, desired);
+        var history = WslRemoteSetup.Reporting.Ui.OpenHistory("상태 진단(읽기 전용)");
+        history.Begin("진단 결과");
+        if (snapshot.Identity is { } who) history.Detail("실행 계정", $"{who.UserName} ({who.Sid}), 승격={who.IsElevated}");
+        foreach (var a in snapshot.Accounts ?? []) history.Detail($"계정 {a.Name}", $"{a.Sid}, 사용={a.Enabled}, 관리자={a.IsAdministrator}, 원격데스크톱={a.IsRemoteDesktopUser}");
+        foreach (var r in results) history.Detail(r.Id, $"{CheckResult.Label(r.Status)} {r.Detail}");
+        history.Done($"FAIL {results.Count(r => r.Status == CheckStatus.Fail)}, WARN {results.Count(r => r.Status == CheckStatus.Warn)}");
+        history.Finish("완료");
         Console.WriteLine();
         Console.WriteLine($"진단 시각 {snapshot.CollectedAt:yyyy-MM-dd HH:mm:ss}");
         ConsoleReport.PrintChecks(results);
@@ -152,6 +159,7 @@ internal static class App
             Console.WriteLine();
             Console.WriteLine($"JSON 저장: {Path.GetFullPath(o.JsonPath)}  (계정 SID·내부 IP 포함, 공유 전 확인)");
         }
+        WslRemoteSetup.Reporting.Ui.HistoryHint(history);
         return results.Any(r => r.Status == CheckStatus.Fail) ? ExitChecksFailed : ExitOk;
     }
 
@@ -226,8 +234,8 @@ internal static class App
               WslRemoteSetup.exe doctor [옵션]   비파괴 진단
               WslRemoteSetup.exe plan [옵션]     현재 상태 기반 설치 계획(변경 없음)
               WslRemoteSetup.exe status          설치 상태 파일 확인
-              WslRemoteSetup.exe forward plan|apply|remove  Windows→WSL SSH 포워딩·LAN 방화벽(apply/remove는 관리자)
-              WslRemoteSetup.exe autostart plan|install|remove  로그온 에이전트·네트워크 관리 서비스(install/remove는 관리자)
+              WslRemoteSetup.exe forward plan|apply|remove  SSH 연결 통로·방화벽 허용 규칙(apply/remove는 관리자 창)
+              WslRemoteSetup.exe autostart plan|install|remove  로그인 시 자동 실행·백그라운드 연결 관리(install/remove는 관리자 창)
               WslRemoteSetup.exe pause | resume-monitoring  자동 복구 일시중지/재개(소유자 계정)
               WslRemoteSetup.exe version
 

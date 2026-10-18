@@ -45,7 +45,7 @@ public static class DoctorEvaluator
     {
         if (s.Identity is not { } id) return;
         r.Add(new("RUN_CONTEXT", "현재 실행 계정", CheckStatus.Pass,
-            $"{id.UserName} ({id.Sid}), 승격={(id.IsElevated ? "예" : "아니요")}, 원격 세션={(id.IsRemoteSession ? "예" : "아니요")}"));
+            $"{ShortName(id.UserName)}{(id.IsElevated ? ", 관리자 권한으로 실행 중" : ", 일반 권한으로 실행 중")}{(id.IsRemoteSession ? ", 원격 데스크톱으로 접속 중" : "")}"));
 
         var ownerName = desired.OwnerAccountName ?? ShortName(id.UserName);
         var owner = s.Accounts?.FirstOrDefault(a => string.Equals(a.Name, ownerName, StringComparison.OrdinalIgnoreCase));
@@ -57,7 +57,7 @@ public static class DoctorEvaluator
             r.Add(new("OWNER_ACCOUNT", "WSL 소유 계정", CheckStatus.Fail, $"'{owner.Name}' 계정이 비활성화되어 있습니다."));
         else
             r.Add(new("OWNER_ACCOUNT", "WSL 소유 계정", CheckStatus.Pass,
-                $"{owner.Name} ({owner.Sid}){(owner.IsAdministrator ? ", Administrators 구성원" : "")}{(owner.IsRemoteDesktopUser ? ", Remote Desktop Users 구성원" : "")}"));
+                $"{owner.Name}{(owner.IsAdministrator ? ", 관리자 그룹" : "")}{(owner.IsRemoteDesktopUser ? ", 원격 데스크톱 허용" : "")}"));
 
         if (id.IsElevated)
             r.Add(new("RUN_ELEVATED", "승격 실행", CheckStatus.Warn,
