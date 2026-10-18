@@ -144,6 +144,10 @@ public class RepairCoordinatorTests
     {
         public List<PortProxyRule> Rules { get; } = [];
         public bool EndpointOk { get; set; } = true;
+        public bool Listening { get; set; } = true;
+        public int Reapplied { get; private set; }
+        public bool IsListening(string address, int port) => Listening;
+        public void Reapply(PortProxyRule rule) { Reapplied++; Listening = true; }
         public Ipv4Cidr? Cidr { get; set; } = ForwardingFixtures.WslHost;
         public int Applied { get; private set; }
 
@@ -206,6 +210,44 @@ public class RepairCoordinatorTests
         Assert.Equal(RepairCode.Denied, c.Handle(ForwardingFixtures.Other, ForwardingFixtures.Request(), "").Code);
         Assert.Equal(RepairCode.Denied, c.Handle(ForwardingFixtures.Owner, null, "JSON 오류").Code);
         Assert.Equal(0, host.Applied);
+    }
+
+    [Fact]
+    public void Configured_but_not_listening_is_reapplied_on_request() // T15 실측 결함
+    {
+        var (c, host, _) = Create();
+        c.Handle(ForwardingFixtures.Owner, ForwardingFixtures.Request(), "");
+        host.Listening = false; // 재부팅 직후 IP Helper가 바인딩하지 못한 상태
+        var r = c.Handle(ForwardingFixtures.Owner, ForwardingFixtures.Request(), "");
+        Assert.Equal(RepairCode.Updated, r.Code);
+        Assert.Equal(1, host.Reapplied);
+        Assert.Equal(RepairCode.NoChange, c.Handle(ForwardingFixtures.Owner, ForwardingFixtures.Request(), "").Code);
+    }
+
+    [Fact]
+    public void Ensure_listening_repairs_only_recorded_owned_rule()
+    {
+        var host = new FakeHost { Listening = false };
+        host.Rules.Add(new("192.168.1.222", 1004, "172.24.220.111", 22));
+        var time = new FakeTimeProvider(DateTimeOffset.UnixEpoch.AddDays(1));
+
+        Assert.False(new RepairCoordinator(ForwardingFixtures.Policy(), host, time).EnsureListening()); // 기록 없음
+        Assert.False(new RepairCoordinator(ForwardingFixtures.Policy(), host, time, "172.24.210.9").EnsureListening()); // 기록과 다름(외부 변경)
+        Assert.Equal(0, host.Reapplied);
+
+        var owned = new RepairCoordinator(ForwardingFixtures.Policy(), host, time, "172.24.220.111");
+        Assert.True(owned.EnsureListening());
+        Assert.Equal(1, host.Reapplied);
+        Assert.False(owned.EnsureListening()); // 이미 수신 중이면 다시 손대지 않음
+    }
+
+    [Fact]
+    public void Ensure_listening_does_nothing_when_rule_missing()
+    {
+        var host = new FakeHost { Listening = false };
+        var c = new RepairCoordinator(ForwardingFixtures.Policy(), host, new FakeTimeProvider(), "172.24.220.111");
+        Assert.False(c.EnsureListening());
+        Assert.Equal(0, host.Reapplied);
     }
 
     [Fact]

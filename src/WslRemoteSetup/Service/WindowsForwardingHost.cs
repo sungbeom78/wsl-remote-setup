@@ -28,4 +28,15 @@ internal sealed class WindowsForwardingHost(ForwardingPolicy policy, ICommandRun
     }
 
     public void Apply(ReconcileAction action) => WindowsForwarding.ApplyPortProxyAsync(runner, action).GetAwaiter().GetResult();
+
+    public bool IsListening(string address, int port) =>
+        System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners()
+            .Any(e => e.Port == port && e.Address.ToString() == address);
+
+    /// <summary>같은 tuple 삭제 후 추가. IP Helper가 수신을 다시 연다. 수신 주소가 아직 없으면 다음 점검 때 다시 시도된다.</summary>
+    public void Reapply(PortProxyRule rule)
+    {
+        WindowsForwarding.DeletePortProxyAsync(runner, rule.ListenAddress, rule.ListenPort).GetAwaiter().GetResult();
+        WindowsForwarding.ApplyPortProxyAsync(runner, new ReconcileAction(ReconcileKind.Add, rule, null, "수신 복구")).GetAwaiter().GetResult();
+    }
 }

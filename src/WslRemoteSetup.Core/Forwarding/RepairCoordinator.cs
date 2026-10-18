@@ -16,6 +16,10 @@ public interface IForwardingHost
     bool CheckEndpoint(IPAddress address, int port);
     /// <summary>Add/Update만 전달된다. 실패하면 예외를 던진다.</summary>
     void Apply(ReconcileAction action);
+    /// <summary>해당 주소·포트에서 실제로 TCP 연결을 받고 있는지(설정 존재와 별개).</summary>
+    bool IsListening(string address, int port);
+    /// <summary>같은 tuple을 지우고 다시 추가해 수신을 되살린다. 이 도구가 소유한 tuple에만 호출된다.</summary>
+    void Reapply(PortProxyRule rule);
 }
 
 /// <summary>
@@ -44,9 +48,9 @@ public sealed class RepairCoordinator(
             var decision = RepairRequestValidator.Evaluate(policy, request, callerSid, host.GetHostWslCidr(), now, LastUpdateAt);
             if (decision.Code == RepairCode.RateLimited)
             {
-                // 간격 제한 중이라도 이미 같은 대상이면 정상 응답한다.
+                // 간격 제한 중이라도 이미 같은 대상이면 정상 응답한다(수신 상태는 확인).
                 var same = PortProxyReconciler.Decide(policy, host.GetPortProxies(), RecordedConnectAddress, request.ObservedWslIPv4);
-                return same.Kind == ReconcileKind.NoChange ? new(RepairCode.NoChange, same.Reason) : new(decision.Code, decision.Reason);
+                return same.Kind == ReconcileKind.NoChange ? ListeningOrRepaired(same.Existing!, same.Reason) : new(decision.Code, decision.Reason);
             }
             if (!decision.Allowed) return new(decision.Code, decision.Reason);
 
@@ -55,7 +59,7 @@ public sealed class RepairCoordinator(
             {
                 case ReconcileKind.NoChange:
                     RecordedConnectAddress = action.Desired!.ConnectAddress;
-                    return new(RepairCode.NoChange, action.Reason);
+                    return ListeningOrRepaired(action.Existing!, action.Reason);
                 case ReconcileKind.Conflict:
                     return new(RepairCode.Conflict, action.Reason);
             }
@@ -68,5 +72,33 @@ public sealed class RepairCoordinator(
             LastUpdateAt = now;
             return new(RepairCode.Updated, action.Kind == ReconcileKind.Add ? "포워딩 추가" : "포워딩 대상 갱신");
         }
+    }
+
+    /// <summary>
+    /// 요청과 무관하게 소유한 규칙이 실제로 수신 중인지 확인하고, 끊겨 있으면 같은 값으로 다시 적용한다.
+    /// 부팅 시 IP Helper가 수신 주소가 준비되기 전에 바인딩에 실패하면 스스로 재시도하지 않기 때문이다(G2 T15 실측).
+    /// 규칙이 없거나, 기록과 다르게 바뀌었거나, 기록이 없으면 아무것도 하지 않는다.
+    /// </summary>
+    public bool EnsureListening()
+    {
+        lock (_gate)
+        {
+            if (RecordedConnectAddress is null) return false;
+            var existing = host.GetPortProxies().FirstOrDefault(r => r.ListenPort == policy.ListenPort
+                && string.Equals(r.ListenAddress, policy.ListenAddress, StringComparison.OrdinalIgnoreCase));
+            if (existing is null || existing.ConnectPort != policy.ConnectPort
+                || !string.Equals(existing.ConnectAddress, RecordedConnectAddress, StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (host.IsListening(policy.ListenAddress, policy.ListenPort)) return false;
+            host.Reapply(existing);
+            return true;
+        }
+    }
+
+    private RepairResponse ListeningOrRepaired(PortProxyRule existing, string reason)
+    {
+        if (host.IsListening(policy.ListenAddress, policy.ListenPort)) return new(RepairCode.NoChange, reason);
+        host.Reapply(existing);
+        return new(RepairCode.Updated, "수신이 끊겨 있어 같은 규칙으로 다시 적용");
     }
 }

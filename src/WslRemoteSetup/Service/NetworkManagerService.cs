@@ -63,6 +63,30 @@ internal sealed class NetworkManagerService : BackgroundService
         });
 
         log.Write("INFO", $"네트워크 관리부 시작: {key} → *:{policy.ConnectPort}, 소유자 {policy.OwnerSid}");
+
+        // 수신 감시: 시작 직후, 네트워크 주소 변경 시, 그리고 60초마다 소유 규칙이 실제로 수신 중인지 확인한다.
+        using var wake = new SemaphoreSlim(0);
+        void OnAddressChanged(object? s, EventArgs e) => wake.Release();
+        System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnAddressChanged;
+        var watcher = Task.Run(async () =>
+        {
+            var delay = TimeSpan.FromSeconds(10); // 부팅 직후 주소 준비를 잠시 기다린다.
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try { await wake.WaitAsync(delay, stoppingToken); } catch (OperationCanceledException) { break; }
+                delay = TimeSpan.FromSeconds(60);
+                try
+                {
+                    if (coordinator.EnsureListening())
+                        log.Write("INFO", $"{key} 수신이 끊겨 있어 같은 규칙으로 다시 적용했습니다.");
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or IOException)
+                {
+                    log.Write("WARN", $"수신 복구 실패: {ex.Message}");
+                }
+            }
+        }, stoppingToken);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try { await server.ServeOnceAsync(stoppingToken); }
@@ -73,6 +97,8 @@ internal sealed class NetworkManagerService : BackgroundService
                 await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
             }
         }
+        System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnAddressChanged;
+        try { await watcher; } catch (OperationCanceledException) { }
         log.Write("INFO", "네트워크 관리부 종료");
     }
 
