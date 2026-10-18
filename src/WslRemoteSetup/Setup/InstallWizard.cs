@@ -59,6 +59,19 @@ internal static class InstallWizard
         if (choices is null) return Stop(history, "질문 단계에서 중단");
         history.Detail("선택값", $"port={choices.ListenPort} owner={choices.OwnerAccount} linux={choices.LinuxUser} auth={choices.SshAuth} distro={choices.Distro}");
         Program_DhcpNotice(snapshot);
+        var routedNow = snapshot.Interfaces?.Where(x => x.IsUp && x.Gateways.Count > 0 && x.Ipv4.Count > 0).ToList();
+        if (routedNow is { Count: 1 } && routedNow[0].DhcpEnabled == true)
+        {
+            Console.Write("  (고급) 이 PC 주소를 지금 주소 그대로 고정할까요? 공유기에서 주소 예약을 할 수 없을 때 도움이 됩니다. [y/N] ");
+            if (Confirmation.ParseDefaultNo(Console.ReadLine()) == ConfirmAnswer.Yes)
+            {
+                history.Begin("주소 고정(관리자)");
+                var nr = Elevation.RunSelfElevated("network", "apply", "--pause-at-end");
+                history.Detail("결과", nr.Started ? $"종료코드 {nr.ExitCode}" : nr.Error);
+                history.Done(nr.Started && nr.ExitCode == App.ExitOk ? "고정함" : "고정하지 않음");
+                snapshot = await new WindowsProbe(runner).CollectAsync();
+            }
+        }
 
         // 2. WSL 기능
         Step(2, "WSL 설치 확인");

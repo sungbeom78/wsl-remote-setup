@@ -39,7 +39,7 @@ internal static class App
             if (args.Length == 0) return await InteractiveAsync();
 
             var command = args[0].ToLowerInvariant();
-            var sub = command is "forward" or "autostart" && args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1].ToLowerInvariant() : null;
+            var sub = command is "forward" or "autostart" or "network" && args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1].ToLowerInvariant() : null;
             var options = Options.Parse(args.Skip(sub is null ? 1 : 2).ToArray());
             if (options.Error is not null)
             {
@@ -62,6 +62,7 @@ internal static class App
                     : Usage("agent --installation-id <guid> [--distro <이름>]"),
                 "service" => await WslRemoteSetup.Service.ServiceCommand.RunAsync(),
                 "autostart" => await WithPause(options, () => WslRemoteSetup.Service.AutostartCommand.RunAsync(new(sub ?? "", options.InstallationId, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro))),
+                "network" => await WithPause(options, () => WslRemoteSetup.Network.NetworkCommand.RunAsync(sub ?? "", options.Ip)),
                 "pause" => WslRemoteSetup.Agent.AgentCommand.SetPaused(true),
                 "resume-monitoring" => WslRemoteSetup.Agent.AgentCommand.SetPaused(false),
                 "install" or "resume" => await WslRemoteSetup.Setup.InstallWizard.RunAsync(),
@@ -243,6 +244,7 @@ internal static class App
               WslRemoteSetup.exe forward add-service --service web:8080:80   추가 포트 열기(관리자 창)
               WslRemoteSetup.exe forward remove-service --name web           추가 포트 닫기(관리자 창)
               WslRemoteSetup.exe autostart plan|install|remove  로그인 시 자동 실행·백그라운드 연결 관리(install/remove는 관리자 창)
+              WslRemoteSetup.exe network plan|apply|revert [--ip 주소]  (고급) 이 PC 주소 고정·해제(apply/revert는 관리자 창, 5분 안에 확인 없으면 자동 원복)
               WslRemoteSetup.exe pause | resume-monitoring  자동 복구 일시중지/재개(소유자 계정)
               WslRemoteSetup.exe version
 
@@ -306,6 +308,7 @@ internal sealed record Options
     public bool PauseAtEnd { get; init; }
     public IReadOnlyList<WslRemoteSetup.Core.Model.ServiceForward> Services { get; init; } = [];
     public string? Name { get; init; }
+    public string? Ip { get; init; }
     public SshAuthentication? SshAuth { get; init; }
     public string? Error { get; init; }
 
@@ -349,6 +352,10 @@ internal sealed record Options
                 case "--service":
                     if (WslRemoteSetup.Forwarding.ServiceForwarding.Parse(value) is not { } svc) return o with { Error = "--service는 이름:외부포트:WSL포트 형식입니다(예: web:8080:80)." };
                     o = o with { Services = [.. o.Services, svc] };
+                    break;
+                case "--ip":
+                    if (!InputValidator.TryParseIPv4(value, out _)) return o with { Error = "--ip는 IPv4여야 합니다." };
+                    o = o with { Ip = value };
                     break;
                 case "--name":
                     o = o with { Name = value.Trim().ToLowerInvariant() };

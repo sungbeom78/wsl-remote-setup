@@ -130,6 +130,18 @@ internal static class UninstallWizard
             else { Ui.Line("삭제하지 않습니다."); skipped.Add($"{distro} 삭제"); }
         }
 
+        // (선택) 이 도구가 고정한 주소 해제
+        if (new StateStore(ProtectedPaths.StateFile).Load().State?.ResourceOwnership.Any(r => r.Kind == "static-ip") == true)
+        {
+            Console.WriteLine();
+            Ui.Line("이 도구로 이 PC 주소를 고정해 두었습니다. 공유기 자동 할당으로 되돌릴 수 있습니다.");
+            Ui.Line("  - 주소가 바뀌면 원격 연결이 끊기고, 다른 PC의 접속 주소를 바꿔야 할 수 있습니다.");
+            Console.Write("  자동 할당으로 되돌릴까요? [y/N] ");
+            if (Confirmation.ParseDefaultNo(Console.ReadLine()) == ConfirmAnswer.Yes)
+                Record(history, "주소 고정 해제", Elevation.RunSelfElevated("network", "revert", "--pause-at-end"), done, skipped);
+            else skipped.Add("주소 고정 해제");
+        }
+
         // 5. 설치 이력
         Step(5, "설치 이력");
         Ui.Line("이 도구가 설치했거나 사용한 프로그램(지우지 않음)과 직접 지우는 방법:");
