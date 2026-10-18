@@ -199,7 +199,7 @@ public sealed class WindowsProbe(ICommandRunner runner)
         return list;
     }
 
-    private static Dictionary<int, NetworkCategory> ProbeNetworkCategories()
+    internal static Dictionary<int, NetworkCategory> ProbeNetworkCategories()
     {
         var map = new Dictionary<int, NetworkCategory>();
         try

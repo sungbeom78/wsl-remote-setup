@@ -20,6 +20,12 @@ namespace WslRemoteSetup.Service;
 [SupportedOSPlatform("windows")]
 internal sealed class NetworkManagerService : BackgroundService
 {
+    /// <summary>정책과 그 정책으로 만든 조정기. 주소 이동(ADR 0007) 후 새 정책으로 바꿔 끼운다.</summary>
+    private sealed record Context(ForwardingPolicy Policy, RepairCoordinator Coordinator)
+    {
+        public string Key => string.Create(CultureInfo.InvariantCulture, $"{Policy.ListenAddress}:{Policy.ListenPort}");
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var log = new ServiceLog();
@@ -38,18 +44,25 @@ internal sealed class NetworkManagerService : BackgroundService
         }
 
         var store = new StateStore(ProtectedPaths.StateFile);
-        var state = store.Load().State;
-        var key = string.Create(CultureInfo.InvariantCulture, $"{policy.ListenAddress}:{policy.ListenPort}");
-        var recorded = state?.ResourceOwnership.FirstOrDefault(r => r.Kind == ResourceKinds.PortProxy && r.Key == key)?.Value?.Split(':')[0];
-
         var runner = WindowsForwarding.Runner();
-        var coordinator = new RepairCoordinator(policy, new WindowsForwardingHost(policy, runner), TimeProvider.System, recorded);
+        Context Build(ForwardingPolicy p)
+        {
+            var key = string.Create(CultureInfo.InvariantCulture, $"{p.ListenAddress}:{p.ListenPort}");
+            var recorded = store.Load().State?.ResourceOwnership
+                .FirstOrDefault(r => r.Kind == ResourceKinds.PortProxy && r.Key == key)?.Value?.Split(':')[0];
+            return new Context(p, new RepairCoordinator(p, new WindowsForwardingHost(p, runner), TimeProvider.System, recorded));
+        }
+        var ctx = Build(policy);
+        var gate = new Lock();
+
         var security = RepairPipe.CreateSecurity(new SecurityIdentifier(policy.OwnerSid));
         var server = new RepairPipeServer(RepairPipe.PipeName(policy.InstallationId), security, (caller, request, error) =>
         {
-            var before = coordinator.RecordedConnectAddress;
+            Context c;
+            lock (gate) c = ctx;
+            var before = c.Coordinator.RecordedConnectAddress;
             RepairResponse response;
-            try { response = coordinator.Handle(caller, request, error); }
+            try { response = c.Coordinator.Handle(caller, request, error); }
             catch (Exception ex) when (ex is InvalidOperationException or IOException)
             {
                 response = new RepairResponse(RepairCode.Error, "적용 실패");
@@ -57,17 +70,20 @@ internal sealed class NetworkManagerService : BackgroundService
             }
             if (response.Code is not RepairCode.NoChange)
                 log.Write("INFO", $"요청 caller={caller} ip={request?.ObservedWslIPv4} → {response.Code}: {response.Message}");
-            if (response.Code == RepairCode.Updated && coordinator.RecordedConnectAddress != before)
-                PersistTarget(store, key, coordinator.RecordedConnectAddress!, policy.ConnectPort, log);
+            if (response.Code == RepairCode.Updated && c.Coordinator.RecordedConnectAddress != before)
+                PersistTarget(store, c.Key, c.Coordinator.RecordedConnectAddress!, c.Policy.ConnectPort, log);
             return response;
         });
 
-        log.Write("INFO", $"네트워크 관리부 시작: {key} → *:{policy.ConnectPort}, 소유자 {policy.OwnerSid}");
+        log.Write("INFO", $"네트워크 관리부 시작: {ctx.Key} → *:{policy.ConnectPort}, 소유자 {policy.OwnerSid}, 주소 따라가기 {(policy.FollowAddressChange ? "켬" : "끔")}");
 
-        // 수신 감시: 시작 직후, 네트워크 주소 변경 시, 그리고 60초마다 소유 규칙이 실제로 수신 중인지 확인한다.
+        // 감시: 시작 직후, 네트워크 주소 변경 시, 그리고 60초마다
+        //  1) 접속 주소가 바뀌었으면(DHCP) 승인된 범위 안에서만 새 주소로 옮긴다(ADR 0007)
+        //  2) 소유 규칙이 실제로 수신 중인지 확인하고 끊겼으면 다시 적용한다
         using var wake = new SemaphoreSlim(0);
         void OnAddressChanged(object? s, EventArgs e) => wake.Release();
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnAddressChanged;
+        string? lastHold = null;
         var watcher = Task.Run(async () =>
         {
             var delay = TimeSpan.FromSeconds(10); // 부팅 직후 주소 준비를 잠시 기다린다.
@@ -75,14 +91,31 @@ internal sealed class NetworkManagerService : BackgroundService
             {
                 try { await wake.WaitAsync(delay, stoppingToken); } catch (OperationCanceledException) { break; }
                 delay = TimeSpan.FromSeconds(60);
+                Context c;
+                lock (gate) c = ctx;
                 try
                 {
-                    if (coordinator.EnsureListening())
-                        log.Write("INFO", $"{key} 수신이 끊겨 있어 같은 규칙으로 다시 적용했습니다.");
+                    var decision = AddressFollower.Decide(c.Policy, AddressMove.ObserveAdapters());
+                    if (decision.Kind == FollowKind.Move)
+                    {
+                        var moved = AddressMove.Apply(c.Policy, decision.NewAddress!, store, runner, log);
+                        lock (gate) ctx = Build(moved);
+                        lastHold = null;
+                        continue;
+                    }
+                    if (decision.Kind == FollowKind.Hold && decision.Reason != lastHold)
+                    {
+                        log.Write("WARN", $"접속 주소 {c.Policy.ListenAddress}가 이 PC에 없습니다: {decision.Reason}");
+                        lastHold = decision.Reason;
+                    }
+                    if (decision.Kind == FollowKind.Stay) lastHold = null;
+
+                    if (c.Coordinator.EnsureListening())
+                        log.Write("INFO", $"{c.Key} 수신이 끊겨 있어 같은 규칙으로 다시 적용했습니다.");
                 }
-                catch (Exception ex) when (ex is InvalidOperationException or IOException)
+                catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
                 {
-                    log.Write("WARN", $"수신 복구 실패: {ex.Message}");
+                    log.Write("WARN", $"감시 작업 실패: {ex.Message}");
                 }
             }
         }, stoppingToken);

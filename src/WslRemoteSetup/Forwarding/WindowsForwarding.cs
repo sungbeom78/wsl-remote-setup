@@ -149,6 +149,24 @@ internal static class WindowsForwarding
         policy.Rules.Add(rule);
     }
 
+    /// <summary>이름과 설명(설치 ID)이 모두 일치하는 규칙이 정확히 하나일 때만 로컬 주소를 바꾼다(ADR 0007).</summary>
+    public static bool UpdateFirewallLocalAddress(string name, Guid installationId, string newAddress)
+    {
+        var policyType = Type.GetTypeFromProgID("HNetCfg.FwPolicy2") ?? throw new InvalidOperationException("방화벽 COM 없음");
+        dynamic policy = Activator.CreateInstance(policyType)!;
+        dynamic? match = null;
+        var count = 0;
+        foreach (dynamic r in policy.Rules)
+        {
+            if ((string)r.Name != name) continue;
+            count++;
+            if (((string?)r.Description ?? "").Contains(installationId.ToString("D"), StringComparison.OrdinalIgnoreCase)) match = r;
+        }
+        if (count != 1 || match is null) return false;
+        match.LocalAddresses = newAddress;
+        return true;
+    }
+
     /// <summary>이름과 설명(설치 ID)이 모두 일치하는 규칙이 정확히 하나일 때만 제거한다.</summary>
     public static bool RemoveFirewallRule(string name, Guid installationId)
     {

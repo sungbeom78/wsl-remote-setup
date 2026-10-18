@@ -34,7 +34,7 @@ internal static class AutostartCommand
         Guid InstallationId, string OwnerSid, string OwnerName, ForwardingPolicy Policy,
         string SourceExe, string SourceHash, string? InstalledHash,
         ServiceInfo? Service, bool TaskExists, string TaskName, string TaskArguments,
-        List<string> Blockers, List<string> TechNotes);
+        List<string> Blockers, List<string> TechNotes, bool AddressIsDhcp = false);
 
     private sealed record ServiceInfo(string PathName, string StartName, string State, string StartMode);
 
@@ -73,6 +73,17 @@ internal static class AutostartCommand
             return plan.Blockers.Count == 0 ? App.ExitOk : App.ExitChecksFailed;
         }
         if (plan.Blockers.Count > 0) { history.Finish("진행 불가"); Ui.HistoryHint(history); return App.ExitChecksFailed; }
+        if (plan.AddressIsDhcp)
+        {
+            Console.WriteLine();
+            Ui.Line($"이 PC 주소({plan.Policy.ListenAddress})는 공유기가 자동으로 정한 주소라 바뀔 수 있습니다.");
+            Ui.Line("주소가 바뀌면, 같은 공유기 범위 안에서만 새 주소로 연결 통로를 옮길 수 있습니다.");
+            Ui.Line("(다른 네트워크·공용 네트워크로 바뀌면 옮기지 않고 멈춥니다. 접속하는 PC의 주소 설정은 직접 바꿔야 합니다.)");
+            Console.Write($"  주소가 바뀌면 따라갈까요? {Confirmation.Prompt} ");
+            var follow = Confirmation.Parse(Console.ReadLine()) != ConfirmAnswer.No;
+            plan = plan with { Policy = plan.Policy with { FollowAddressChange = follow } };
+            history.Note($"주소 따라가기 선택: {(follow ? "켬" : "끔")}");
+        }
         if (!ConfirmPrompt.Ask(out var code)) { history.Finish("사용자가 취소함(변경 없음)"); return code; }
         history.Note("사용자가 [Y/n] 확인에서 진행을 선택함");
 
@@ -212,6 +223,20 @@ internal static class AutostartCommand
         if (!HostKeyFingerprint.IsWellFormed(hostKey)) blockers.Add("WSL SSH 서버 확인 정보가 기록에 없습니다. 'forward apply'를 다시 실행해 주세요.");
         if (!InputValidator.DistroName(o.Distro).IsValid) blockers.Add("WSL 배포판 이름이 올바르지 않습니다.");
 
+        // 접속 주소를 가진 네트워크 카드·LAN 범위·DHCP 여부(ADR 0007)
+        string? interfaceId = null, lanCidr = null;
+        var isDhcp = false;
+        foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+        {
+            var ua = ni.GetIPProperties().UnicastAddresses.FirstOrDefault(u => u.Address.ToString() == listen);
+            if (ua is null) continue;
+            interfaceId = ni.Id;
+            lanCidr = Core.Network.Ipv4Cidr.FromAddress(ua.Address, ua.PrefixLength).ToString();
+            try { isDhcp = ni.GetIPProperties().GetIPv4Properties().IsDhcpEnabled; } catch (System.Net.NetworkInformation.NetworkInformationException) { }
+            break;
+        }
+        var previousFollow = ExistingPolicy()?.FollowAddressChange ?? false;
+
         var policy = new ForwardingPolicy
         {
             InstallationId = installationId == Guid.Empty ? Guid.NewGuid() : installationId,
@@ -220,6 +245,9 @@ internal static class AutostartCommand
             ListenPort = port == 0 ? 1 : port,
             ConnectPort = 22,
             SshHostKeyFingerprints = string.IsNullOrEmpty(hostKey) ? [] : [hostKey],
+            ListenInterfaceId = interfaceId,
+            LanCidr = lanCidr,
+            FollowAddressChange = isDhcp && previousFollow,
         };
         if (port != 0) blockers.AddRange(policy.Validate());
 
@@ -255,7 +283,8 @@ internal static class AutostartCommand
         foreach (var b in blockers) history.Note($"진행 불가 사유: {b}");
         history.Done(blockers.Count == 0 ? "진행 가능" : "진행 불가");
 
-        return new Plan(policy.InstallationId, ownerSid, Ui.CurrentUserName(), policy, source, sourceHash, installedHash, service, taskExists, taskName, args, blockers, tech);
+        history.Detail("주소", $"{listen} DHCP={isDhcp} 카드={interfaceId} 범위={lanCidr} 따라가기(기존)={previousFollow}");
+        return new Plan(policy.InstallationId, ownerSid, Ui.CurrentUserName(), policy, source, sourceHash, installedHash, service, taskExists, taskName, args, blockers, tech, isDhcp);
     }
 
     private static void Print(Plan p, AutostartOptions o, bool install)
@@ -277,6 +306,7 @@ internal static class AutostartCommand
         Ui.Line("알아 둘 점");
         Ui.Note($"컴퓨터를 다시 켜거나 로그아웃하면, {p.OwnerName}으로 다시 로그인해야 SSH 접속이 됩니다.");
         Ui.Note("잠시 멈추려면 'pause', 다시 켜려면 'resume-monitoring'.");
+        if (p.AddressIsDhcp) Ui.Note("이 PC 주소가 자동 할당이라 바뀔 수 있습니다. 설치할 때 '주소가 바뀌면 따라갈지' 묻습니다. 공유기에서 주소를 고정 배정하는 것을 권장합니다.");
         Ui.Note("되돌리기: 관리자 창에서 'autostart remove'.");
         Console.WriteLine();
         if (p.Blockers.Count == 0) Ui.Line("확인 결과: 진행할 수 있습니다.");
@@ -285,11 +315,17 @@ internal static class AutostartCommand
 
     private static string? ExistingPolicyHostKey()
     {
+        var keys = ExistingPolicy()?.SshHostKeyFingerprints;
+        return keys is { Count: > 0 } ? keys[0] : null;
+    }
+
+    /// <summary>보호 경로의 기존 정책(관리자만 쓸 수 있을 때만 신뢰).</summary>
+    private static ForwardingPolicy? ExistingPolicy()
+    {
         try
         {
             if (!File.Exists(ProtectedPaths.PolicyFile) || !ProtectedPaths.IsAdminOnlyWritable(ProtectedPaths.PolicyFile, out _)) return null;
-            var keys = ForwardingPolicy.Parse(File.ReadAllText(ProtectedPaths.PolicyFile)).SshHostKeyFingerprints;
-            return keys.Count > 0 ? keys[0] : null;
+            return ForwardingPolicy.Parse(File.ReadAllText(ProtectedPaths.PolicyFile));
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException) { return null; }
     }

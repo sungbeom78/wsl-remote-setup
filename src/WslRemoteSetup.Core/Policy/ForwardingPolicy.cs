@@ -23,6 +23,12 @@ public sealed record ForwardingPolicy
     public required int ConnectPort { get; init; }
     public TimeSpan MinUpdateInterval { get; init; } = TimeSpan.FromSeconds(30);
     public IReadOnlyList<string> SshHostKeyFingerprints { get; init; } = [];
+    /// <summary>DHCP 주소 변경 시 같은 카드·같은 LAN 범위 안에서 새 주소로 옮길지(ADR 0007).</summary>
+    public bool FollowAddressChange { get; init; }
+    /// <summary>수신 네트워크 카드 ID(Windows NetworkInterface.Id).</summary>
+    public string? ListenInterfaceId { get; init; }
+    /// <summary>승인 당시 LAN 범위(예: 192.168.1.0/24).</summary>
+    public string? LanCidr { get; init; }
 
     public IReadOnlyList<string> Validate()
     {
@@ -37,6 +43,13 @@ public sealed record ForwardingPolicy
         if (!InputValidator.Port(ListenPort).IsValid) e.Add("listenPort 범위 오류");
         if (!InputValidator.Port(ConnectPort).IsValid) e.Add("connectPort 범위 오류");
         if (MinUpdateInterval < TimeSpan.FromSeconds(5)) e.Add("minUpdateInterval은 5초 이상이어야 합니다.");
+        if (FollowAddressChange)
+        {
+            if (string.IsNullOrEmpty(ListenInterfaceId)) e.Add("주소 따라가기에는 네트워크 카드 ID가 필요합니다.");
+            if (!Ipv4Cidr.TryParse(LanCidr, out var lan)) e.Add("주소 따라가기에는 LAN 범위가 필요합니다.");
+            else if (lan.PrefixLength < 16) e.Add("LAN 범위가 너무 넓습니다(/16보다 넓은 범위는 허용하지 않음).");
+            else if (InputValidator.TryParseIPv4(ListenAddress, out var la) && !lan.Contains(la)) e.Add("접속 주소가 LAN 범위 밖입니다.");
+        }
         return e;
     }
 
