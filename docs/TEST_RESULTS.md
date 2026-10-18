@@ -158,3 +158,14 @@
 | Windows localhost:22 | 관찰 | WSL localhost 포워딩으로 127.0.0.1/::1:22만 수신하고 배너 응답. LAN 노출은 없음 |
 | 실제 SSH 인증(비밀번호/공개키) | NOT_TESTED | |
 | LAN 경로 | NOT_TESTED | 포워딩·방화벽 미구성 |
+
+## 2026-10-18 — M4 forward plan (읽기 전용, 비승격)
+
+| 항목 | 결과 | 비고 |
+|---|---|---|
+| 단위/통합 테스트 | PASS | 159 / 5 |
+| `forward apply` 비승격 실행 | PASS | `ELEVATION_REQUIRED`로 거부, exit 2, 변경 없음 |
+| `ssh-keyscan.exe`(Windows OpenSSH 9.5p1) | FAIL → 대체 | `choose_kex: unsupported KEX method sntrup761x25519-sha512`. `ssh.exe -v`(KEX·host key 알고리즘 지정, 인증 none)로 지문을 읽도록 바꿈 |
+| 1차 plan | 올바르게 차단 | host key를 읽지 못해 적용 불가로 판정 |
+| 관찰 | 기록 | 클라이언트가 없으면 배포판이 약 16초 뒤 종료되어 sshd도 종료됨(journal: signal 15). 그 동안 연결이 거부됨. LAN 접속에는 keeper(M5)가 필요함 |
+| 2차 plan(배포판 유지 중) | PASS | 192.168.1.222:1004 → 172.24.220.111:22, ED25519 지문 일치, 방화벽 Private·192.168.1.0/24, 차단 사유 없음 |

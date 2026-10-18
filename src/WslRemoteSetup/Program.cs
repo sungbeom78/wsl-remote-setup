@@ -8,6 +8,7 @@ using WslRemoteSetup.Core.Execution;
 using WslRemoteSetup.Core.Model;
 using WslRemoteSetup.Core.Planning;
 using WslRemoteSetup.Core.State;
+using WslRemoteSetup.Core.Validation;
 using WslRemoteSetup.Probing;
 
 Console.OutputEncoding = Encoding.UTF8;
@@ -37,7 +38,8 @@ internal static class App
             if (args.Length == 0) return await InteractiveAsync();
 
             var command = args[0].ToLowerInvariant();
-            var options = Options.Parse(args.Skip(1).ToArray());
+            var sub = command == "forward" && args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1].ToLowerInvariant() : null;
+            var options = Options.Parse(args.Skip(sub is null ? 1 : 2).ToArray());
             if (options.Error is not null)
             {
                 Console.Error.WriteLine(options.Error);
@@ -49,6 +51,9 @@ internal static class App
                 "plan" => await PlanAsync(options),
                 "status" => Status(),
                 "poc-lifetime" => await PocLifetimeAsync(options),
+                "forward" => await WslRemoteSetup.Forwarding.ForwardCommand.RunAsync(new(
+                    sub ?? "", options.InstallationId, options.Listen, options.Port ?? DesiredConfiguration.DefaultListenPort,
+                    options.WslIp, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro)),
                 "help" or "--help" or "-h" or "/?" => Help(),
                 "version" or "--version" => PrintVersion(),
                 "install" or "resume" or "repair" or "pause" or "resume-monitoring" or "uninstall" => NotYet(command),
@@ -213,6 +218,7 @@ internal static class App
               WslRemoteSetup.exe doctor [옵션]   비파괴 진단
               WslRemoteSetup.exe plan [옵션]     현재 상태 기반 설치 계획(변경 없음)
               WslRemoteSetup.exe status          설치 상태 파일 확인
+              WslRemoteSetup.exe forward plan|apply|remove  Windows→WSL SSH 포워딩·LAN 방화벽(apply/remove는 관리자)
               WslRemoteSetup.exe version
 
             옵션:
@@ -251,6 +257,10 @@ internal sealed record Options
     public int? Port { get; init; }
     public string? JsonPath { get; init; }
     public int? HoldSeconds { get; init; }
+    public Guid? InstallationId { get; init; }
+    public string? Listen { get; init; }
+    public string? WslIp { get; init; }
+    public string? HostKey { get; init; }
     public string? Error { get; init; }
 
     public static Options Parse(string[] args)
@@ -272,6 +282,22 @@ internal sealed record Options
                     o = o with { Port = p };
                     break;
                 case "--json": o = o with { JsonPath = value }; break;
+                case "--installation-id":
+                    if (!Guid.TryParseExact(value, "D", out var gid)) return o with { Error = "--installation-id 형식 오류" };
+                    o = o with { InstallationId = gid };
+                    break;
+                case "--listen":
+                    if (!InputValidator.TryParseIPv4(value, out _)) return o with { Error = "--listen은 IPv4여야 합니다." };
+                    o = o with { Listen = value };
+                    break;
+                case "--wsl-ip":
+                    if (!InputValidator.TryParseIPv4(value, out _)) return o with { Error = "--wsl-ip는 IPv4여야 합니다." };
+                    o = o with { WslIp = value };
+                    break;
+                case "--host-key":
+                    if (!WslRemoteSetup.Core.Ssh.HostKeyFingerprint.IsWellFormed(value)) return o with { Error = "--host-key는 SHA256:… 형식이어야 합니다." };
+                    o = o with { HostKey = value };
+                    break;
                 case "--hold":
                     if (!int.TryParse(value, out var h) || h is < 10 or > 3600) return o with { Error = "--hold는 10~3600초여야 합니다." };
                     o = o with { HoldSeconds = h };

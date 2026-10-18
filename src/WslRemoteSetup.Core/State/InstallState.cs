@@ -21,7 +21,17 @@ public enum StepState { NotStarted, Applying, Applied, Verified, Failed, Skipped
 
 public sealed record ApprovalRecord(DateTimeOffset At, string ApprovedBySid, string PlanHash, IReadOnlyList<string> StepIds);
 
-public sealed record OwnedResource(string Kind, string Key, string Description, DateTimeOffset CreatedAt);
+public sealed record OwnedResource(string Kind, string Key, string Description, DateTimeOffset CreatedAt)
+{
+    /// <summary>리소스의 현재 적용값(예: portproxy 대상 "172.24.220.111:22"). 외부 변경 판별에 쓴다.</summary>
+    public string? Value { get; init; }
+}
+
+public static class ResourceKinds
+{
+    public const string PortProxy = "portproxy";
+    public const string FirewallRule = "firewall-rule";
+}
 
 public sealed record VerificationRecord(string Id, string Status, string Detail, DateTimeOffset At);
 
