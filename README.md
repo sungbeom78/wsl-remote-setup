@@ -164,4 +164,10 @@ dotnet run --project tools/ManualBuilder -- artifacts/manual/WSL_Remote_Setup_�
 
 ## 라이선스
 
-아직 정하지 않았습니다. 정해지면 이곳과 `LICENSE` 파일에 적겠습니다.
+[MIT 라이선스](LICENSE)입니다. 누구나 자유롭게 쓰고, 고치고, 다시 배포할 수 있습니다. 저작권 표시와 라이선스 문구만 함께 남겨 주세요.
+이 프로그램은 있는 그대로 제공되며, 사용으로 생긴 문제에 대해 책임지지 않습니다.
+
+## 내려받기
+
+[Releases](https://github.com/sungbeom78/wsl-remote-setup/releases)에서 EXE와 설치 매뉴얼(PowerPoint)을 받을 수 있습니다.
+대부분의 PC는 `win-x64`, ARM 노트북은 `win-arm64`를 받으세요.

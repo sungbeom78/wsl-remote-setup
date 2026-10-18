@@ -9,7 +9,7 @@
     <RootNamespace>WslRemoteSetup</RootNamespace>
     <AssemblyName>WslRemoteSetup</AssemblyName>
     <Version>0.1.0</Version>
-    <InformationalVersion>0.1.0-m2</InformationalVersion>
+    <InformationalVersion>0.1.0</InformationalVersion>
     <InvariantGlobalization>false</InvariantGlobalization>
     <!-- 단일 EXE 배포 설정은 publish 시에만 적용 (DEVELOPMENT_PLAN 10절) -->
     <SelfContained>false</SelfContained>
