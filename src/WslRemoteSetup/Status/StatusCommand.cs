@@ -51,6 +51,7 @@ internal static class StatusCommand
 
         Print(report);
         Ui.HistoryHint(history);
+        Contact.Show();
         return report.Overall is Health.Bad ? App.ExitChecksFailed : App.ExitOk;
     }
 

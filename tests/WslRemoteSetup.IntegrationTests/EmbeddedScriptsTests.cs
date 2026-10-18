@@ -12,6 +12,7 @@ public class EmbeddedScriptsTests
     [InlineData("probe-ssh.sh")]
     [InlineData("verify-ssh.sh")]
     [InlineData("disable-password-auth.sh")]
+    [InlineData("revert-ssh.sh")]
     public void Script_is_embedded_and_extracted_with_lf(string name)
     {
         var path = LinuxScripts.Extract(name);

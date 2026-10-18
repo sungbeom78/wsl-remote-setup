@@ -66,7 +66,8 @@ internal static class App
                 "resume-monitoring" => WslRemoteSetup.Agent.AgentCommand.SetPaused(false),
                 "install" or "resume" => await WslRemoteSetup.Setup.InstallWizard.RunAsync(),
                 "internal-install-wsl" => WslRemoteSetup.Setup.InternalCommands.InstallWsl(),
-                "repair" or "uninstall" => NotYet(command),
+                "uninstall" => await WslRemoteSetup.Setup.UninstallWizard.RunAsync(),
+                "repair" => NotYet(command),
                 _ => Unknown(command),
             };
         }
@@ -89,13 +90,14 @@ internal static class App
 
         while (true)
         {
-            Console.WriteLine("1. 새로 설치 / 기존 환경에 추가 설정");
+            Console.WriteLine("1. 새로 설치 / 이어서 설치");
             Console.WriteLine("2. 현재 상태 확인");
-            Console.WriteLine("3. 연결 복구");
-            Console.WriteLine("4. 설정 변경");
-            Console.WriteLine("5. 자동 실행 일시중지 / 재개");
-            Console.WriteLine("6. 이 도구가 만든 설정 제거");
+            Console.WriteLine("3. 연결 복구 (설치 단계를 다시 확인하고 빠진 것만 고침)");
+            Console.WriteLine("4. 설정 변경 (포트·계정 등을 다시 묻고 적용)");
+            Console.WriteLine("5. 자동 연결 관리 잠시 멈춤 / 다시 켜기");
+            Console.WriteLine("6. 되돌리기 (외부 연결 닫기부터 단계별로)");
             Console.WriteLine("0. 종료");
+            Console.WriteLine($"   {WslRemoteSetup.Reporting.Contact.Line}");
             Console.WriteLine();
             Console.Write("선택 [2]: ");
             var choice = (Console.ReadLine() ?? "0").Trim();
@@ -109,11 +111,26 @@ internal static class App
                     await WslRemoteSetup.Setup.InstallWizard.RunAsync();
                     break;
                 case "2":
-                    await DoctorAsync(Options.Empty);
                     await WslRemoteSetup.Status.StatusCommand.RunAsync();
                     break;
-                case "3" or "4" or "5" or "6":
-                    Console.WriteLine("이 기능은 아직 구현되지 않았습니다.");
+                case "3":
+                    await WslRemoteSetup.Setup.InstallWizard.RunAsync();
+                    break;
+                case "4":
+                    WslRemoteSetup.Setup.SetupWizard.ForgetChoices();
+                    await WslRemoteSetup.Setup.InstallWizard.RunAsync();
+                    break;
+                case "5":
+                {
+                    var paused = new WslRemoteSetup.Agent.FilePauseSource().IsPaused();
+                    Console.Write(paused ? "  지금 멈춰 있습니다. 다시 켤까요? [Y/n] " : "  자동 연결 관리를 잠시 멈출까요? WSL이 꺼지고 SSH 접속이 끊깁니다. [y/N] ");
+                    var input = Console.ReadLine();
+                    var yes = paused ? Confirmation.Parse(input) != ConfirmAnswer.No : Confirmation.ParseDefaultNo(input) == ConfirmAnswer.Yes;
+                    if (yes) WslRemoteSetup.Agent.AgentCommand.SetPaused(!paused);
+                    break;
+                }
+                case "6":
+                    await WslRemoteSetup.Setup.UninstallWizard.RunAsync();
                     break;
                 default:
                     Console.WriteLine("잘못된 선택입니다.");
@@ -218,6 +235,7 @@ internal static class App
             사용법:
               WslRemoteSetup.exe                 대화형 메뉴
               WslRemoteSetup.exe install         처음부터 끝까지 단계별 설치(일반 창에서 실행, 중간에 멈추면 다시 실행해 이어 하기)
+              WslRemoteSetup.exe uninstall       단계별 되돌리기(외부 연결 닫기 → 자동 실행 중지 → SSH 설정 → 선택: WSL 삭제)
               WslRemoteSetup.exe doctor [옵션]   비파괴 진단
               WslRemoteSetup.exe plan [옵션]     현재 상태 기반 설치 계획(변경 없음)
               WslRemoteSetup.exe status          서비스·자동 실행·SSH 접속 상태를 한눈에(읽기 전용)
@@ -234,7 +252,7 @@ internal static class App
               --ssh-auth password|key-only  SSH 로그인 방식 (기본: password = 비밀번호+공개키)
               --json <파일>             doctor 결과를 JSON으로 저장
 
-            repair/uninstall은 이후 버전에서 제공됩니다.
+            repair는 이후 버전에서 제공됩니다(지금은 install을 다시 실행하면 같은 역할).
 
             {WslRemoteSetup.Reporting.Contact.Line}
             """);

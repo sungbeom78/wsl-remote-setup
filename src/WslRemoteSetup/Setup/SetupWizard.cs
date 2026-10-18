@@ -28,6 +28,12 @@ internal static class SetupWizard
 {
     public static string ChoicesFile => Path.Combine(UserPaths.Root, "user-state", "choices.json");
 
+    /// <summary>"설정 변경": 저장된 선택값을 지워 다음 설치 실행 때 다시 묻게 한다(시스템 설정은 바꾸지 않음).</summary>
+    public static void ForgetChoices()
+    {
+        if (File.Exists(ChoicesFile)) File.Delete(ChoicesFile);
+    }
+
     public static SetupChoices? LoadChoices()
     {
         try

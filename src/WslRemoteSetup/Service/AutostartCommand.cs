@@ -391,7 +391,8 @@ internal static class AutostartCommand
         var store = new StateStore(ProtectedPaths.StateFile);
         var state = store.Load().State;
         if (state is null || (o.InstallationId is { } gid && state.InstallationId != gid)) { Console.WriteLine("이 도구가 만든 자동 실행 설정이 없습니다."); history.Finish("대상 없음"); return App.ExitOk; }
-        var owned = state.ResourceOwnership.Where(r => r.Kind is "scheduled-task" or "service" or "policy" or "file").ToList();
+        // 설치된 프로그램 파일은 지우지 않는다(사용자 결정). 기록에 남기고 위치만 안내한다.
+        var owned = state.ResourceOwnership.Where(r => r.Kind is "scheduled-task" or "service" or "policy").ToList();
         if (owned.Count == 0) { Console.WriteLine("제거할 자동 실행 설정이 없습니다."); history.Finish("대상 없음"); return App.ExitOk; }
 
         Ui.Title("자동 실행 설정 제거");
@@ -399,6 +400,7 @@ internal static class AutostartCommand
         var n = 0;
         foreach (var r in owned) Ui.Item(++n, Plain(r.Kind), "제거");
         Ui.Note("SSH 연결 통로와 방화벽 규칙은 그대로 둡니다(필요하면 'forward remove').");
+        Ui.Note($"설치된 프로그램({ProtectedPaths.InstallDirectory})은 지우지 않습니다. 필요하면 직접 폴더를 지우면 됩니다.");
         foreach (var r in owned) history.Detail(r.Kind, r.Key);
         if (!ConfirmPrompt.Ask(out var code)) { history.Finish("사용자가 취소함"); return code; }
 
