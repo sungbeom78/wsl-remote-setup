@@ -520,3 +520,11 @@
 - 사용자 결정으로 무인 실행 POC는 여기서 **종료**한다. 1.0 지원 범위는 "로그인 후"로 유지한다(개발 계획대로).
 - 다시 시도할 경우의 첫 단계(기록용): 방화벽 드롭 로그(`netsh advfirewall set allprofiles logging droppedconnections enable`, 승인 필요)를 켠 상태로 1회 재부팅해 차단 여부와 적용 규칙을 확인한다.
 - POC 부팅 작업 `\WslRemoteSetup\BootAgent-5f3c9a10`는 남아 있다. 로그인 후 동작에는 영향이 없다(에이전트 하나만 실행). 정리는 `autostart boot-poc-remove` 또는 `uninstall` 2단계로 한다.
+
+## 2026-10-18 21:01 — ADR 0009 ① export-client (G2 실기, 읽기 전용)
+
+- 환경: G2, ownerAdmin(비승격), Debug 빌드. 출력 위치는 Claude 작업용 임시 폴더(`--out`), 바탕화면은 건드리지 않음.
+- 조건: 시스템 설정 변경 없음. WSL에서 `/etc/ssh/ssh_host_ed25519_key.pub` 읽기와 `id -un`만 실행.
+- 결과: **PASS** — 이름 SERVERPC, 192.168.1.222:1004, linux_admin, RDP 7389/ownerAdmin. 서버 키 지문 `SHA256:qjDdY…MsR8`가 설치 상태 기록과 일치. 파일에 비밀번호·설치 ID·SID 없음.
+- 로그: `%LOCALAPPDATA%\WslRemoteSetup\logs\history.log`
+- `client` 모드: 코드·단위 테스트(연결 정보 검증, config/known_hosts 편집·충돌, 공개키 등록 명령 정화)만 완료. 노트북 실기는 **NOT_TESTED**.

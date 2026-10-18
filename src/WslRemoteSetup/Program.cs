@@ -40,6 +40,14 @@ internal static class App
 
             var command = args[0].ToLowerInvariant();
             var sub = command is "forward" or "autostart" or "network" && args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1].ToLowerInvariant() : null;
+            if (command == "client")
+            {
+                // client <파일>: 파일 경로는 대소문자를 바꾸지 않는다.
+                var file = args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1] : null;
+                var copts = Options.Parse(args.Skip(file is null ? 1 : 2).ToArray());
+                if (copts.Error is not null) { Console.Error.WriteLine(copts.Error); return ExitUsage; }
+                return await WithPause(copts, () => WslRemoteSetup.Client.ClientCommand.RunAsync(file));
+            }
             var options = Options.Parse(args.Skip(sub is null ? 1 : 2).ToArray());
             if (options.Error is not null)
             {
@@ -63,6 +71,7 @@ internal static class App
                 "service" => await WslRemoteSetup.Service.ServiceCommand.RunAsync(),
                 "autostart" => await WithPause(options, () => WslRemoteSetup.Service.AutostartCommand.RunAsync(new(sub ?? "", options.InstallationId, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro))),
                 "network" => await WithPause(options, () => WslRemoteSetup.Network.NetworkCommand.RunAsync(sub ?? "", options.Ip)),
+                "export-client" => await WithPause(options, () => WslRemoteSetup.Client.ExportClientCommand.RunAsync(options.Name, options.LinuxUser, options.OutDir)),
                 "pause" => WslRemoteSetup.Agent.AgentCommand.SetPaused(true),
                 "resume-monitoring" => WslRemoteSetup.Agent.AgentCommand.SetPaused(false),
                 "install" or "resume" => await WslRemoteSetup.Setup.InstallWizard.RunAsync(),
@@ -246,6 +255,8 @@ internal static class App
               WslRemoteSetup.exe autostart plan|install|remove  로그인 시 자동 실행·백그라운드 연결 관리(install/remove는 관리자 창)
               WslRemoteSetup.exe network plan|apply|revert [--ip 주소]  (고급) 이 PC 주소 고정·해제(apply/revert는 관리자 창, 5분 안에 확인 없으면 자동 원복)
               WslRemoteSetup.exe pause | resume-monitoring  자동 복구 일시중지/재개(소유자 계정)
+              WslRemoteSetup.exe export-client [--name G2] [--out 폴더]  노트북용 연결 정보 파일 만들기(서버, 소유자 계정)
+              WslRemoteSetup.exe client <파일.wrs.json>   노트북에서 접속 준비(키·서버 확인·접속 이름·원격 데스크톱 바로가기)
               WslRemoteSetup.exe version
 
             옵션:
@@ -308,6 +319,7 @@ internal sealed record Options
     public bool PauseAtEnd { get; init; }
     public IReadOnlyList<WslRemoteSetup.Core.Model.ServiceForward> Services { get; init; } = [];
     public string? Name { get; init; }
+    public string? OutDir { get; init; }
     public string? Ip { get; init; }
     public SshAuthentication? SshAuth { get; init; }
     public string? Error { get; init; }
@@ -363,6 +375,10 @@ internal sealed record Options
                 case "--host-key":
                     if (!WslRemoteSetup.Core.Ssh.HostKeyFingerprint.IsWellFormed(value)) return o with { Error = "--host-key는 SHA256:… 형식이어야 합니다." };
                     o = o with { HostKey = value };
+                    break;
+                case "--out":
+                    if (!Directory.Exists(value)) return o with { Error = "--out 폴더가 없습니다." };
+                    o = o with { OutDir = value };
                     break;
                 case "--hold":
                     if (!int.TryParse(value, out var h) || h is < 10 or > 3600) return o with { Error = "--hold는 10~3600초여야 합니다." };

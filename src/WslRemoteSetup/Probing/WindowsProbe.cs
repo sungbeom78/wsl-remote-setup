@@ -222,7 +222,7 @@ public sealed class WindowsProbe(ICommandRunner runner)
         return map;
     }
 
-    private static RdpInfo ProbeRdp()
+    internal static RdpInfo ProbeRdp()
     {
         const string ts = @"SYSTEM\CurrentControlSet\Control\Terminal Server";
         using var root = Registry.LocalMachine.OpenSubKey(ts) ?? throw new InvalidOperationException("Terminal Server 키 없음");
