@@ -437,3 +437,12 @@
 | POC 명령 | 빌드 PASS | `autostart boot-poc-create` / `boot-poc-remove`(관리자, [Y/n]). scheduled-task로 기록해 되돌리기 2단계에도 포함 |
 | publish | PASS | SHA-256 `825a198d…c9c752c` |
 | 실기 POC | PENDING | 승인 대기: 수정본 재설치 → POC 작업 등록 → 재부팅 → **로그인하지 않은 상태에서** 다른 PC로 SSH 시험 |
+
+## 2026-10-18 17:55 — 무인 실행 POC 준비 실기 (사용자 승인)
+
+| 항목 | 결과 | 비고 |
+|---|---|---|
+| 수정본 재설치 | PASS | 설치본 SHA-256 `825a198d…`, 5단계 완료 |
+| POC 부팅 작업 등록 | PASS | `\WslRemoteSetup\BootAgent-5f3c9a10` Ready/Enabled, Run As ownerAdmin, Logon Mode **Interactive/Background(S4U)** |
+| 새 에이전트(잠금 파일) | PASS | 세션 2에서 시작, NoChange |
+| 재부팅 시험 | PENDING | 재부팅 후 **로그인 전에** 노트북에서 `ssh G2` → 이후 RDP 로그인 → 로그로 세션 0(부팅 작업) 에이전트 동작 여부 확인 |
