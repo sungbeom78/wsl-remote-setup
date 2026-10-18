@@ -52,19 +52,21 @@ internal static class App
                 "plan" => await PlanAsync(options),
                 "status" => await WslRemoteSetup.Status.StatusCommand.RunAsync(),
                 "poc-lifetime" => await PocLifetimeAsync(options),
-                "forward" => await WslRemoteSetup.Forwarding.ForwardCommand.RunAsync(new(
+                "forward" => await WithPause(options, () => WslRemoteSetup.Forwarding.ForwardCommand.RunAsync(new(
                     sub ?? "", options.InstallationId, options.Listen, options.Port ?? DesiredConfiguration.DefaultListenPort,
-                    options.WslIp, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro)),
+                    options.WslIp, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro))),
                 "help" or "--help" or "-h" or "/?" => Help(),
                 "version" or "--version" => PrintVersion(),
                 "agent" => options.InstallationId is { } aid
                     ? await WslRemoteSetup.Agent.AgentCommand.RunAsync(aid, options.Distro ?? DesiredConfiguration.DefaultDistro)
                     : Usage("agent --installation-id <guid> [--distro <이름>]"),
                 "service" => await WslRemoteSetup.Service.ServiceCommand.RunAsync(),
-                "autostart" => await WslRemoteSetup.Service.AutostartCommand.RunAsync(new(sub ?? "", options.InstallationId, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro)),
+                "autostart" => await WithPause(options, () => WslRemoteSetup.Service.AutostartCommand.RunAsync(new(sub ?? "", options.InstallationId, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro))),
                 "pause" => WslRemoteSetup.Agent.AgentCommand.SetPaused(true),
                 "resume-monitoring" => WslRemoteSetup.Agent.AgentCommand.SetPaused(false),
-                "install" or "resume" or "repair" or "uninstall" => NotYet(command),
+                "install" or "resume" => await WslRemoteSetup.Setup.InstallWizard.RunAsync(),
+                "internal-install-wsl" => WslRemoteSetup.Setup.InternalCommands.InstallWsl(),
+                "repair" or "uninstall" => NotYet(command),
                 _ => Unknown(command),
             };
         }
@@ -104,15 +106,8 @@ internal static class App
                 case "0":
                     return ExitOk;
                 case "1":
-                {
-                    var snap = await CollectAsync();
-                    var choices = await WslRemoteSetup.Setup.SetupWizard.AskAsync(snap);
-                    if (choices is null) break;
-                    await PlanAsync(Options.Empty, WslRemoteSetup.Setup.SetupWizard.ToDesired(choices), snap);
-                    Console.WriteLine();
-                    Console.WriteLine("  선택한 값은 저장했습니다. 실제 설치(단계별 승인)는 다음 버전의 설치 마법사에서 이어서 진행합니다.");
+                    await WslRemoteSetup.Setup.InstallWizard.RunAsync();
                     break;
-                }
                 case "2":
                     await DoctorAsync(Options.Empty);
                     await WslRemoteSetup.Status.StatusCommand.RunAsync();
@@ -221,7 +216,8 @@ internal static class App
             WSL Remote Setup {Version}
 
             사용법:
-              WslRemoteSetup.exe                 대화형 마법사
+              WslRemoteSetup.exe                 대화형 메뉴
+              WslRemoteSetup.exe install         처음부터 끝까지 단계별 설치(일반 창에서 실행, 중간에 멈추면 다시 실행해 이어 하기)
               WslRemoteSetup.exe doctor [옵션]   비파괴 진단
               WslRemoteSetup.exe plan [옵션]     현재 상태 기반 설치 계획(변경 없음)
               WslRemoteSetup.exe status          서비스·자동 실행·SSH 접속 상태를 한눈에(읽기 전용)
@@ -238,12 +234,22 @@ internal static class App
               --ssh-auth password|key-only  SSH 로그인 방식 (기본: password = 비밀번호+공개키)
               --json <파일>             doctor 결과를 JSON으로 저장
 
-            install/resume/repair/uninstall은 이후 버전에서 제공됩니다.
+            repair/uninstall은 이후 버전에서 제공됩니다.
+
+            {WslRemoteSetup.Reporting.Contact.Line}
             """);
         return ExitOk;
     }
 
     private static int PrintVersion() { Console.WriteLine(Version); return ExitOk; }
+
+    /// <summary>설치 마법사가 연 관리자 창이면 결과를 읽을 수 있게 끝에서 Enter를 기다린다.</summary>
+    private static async Task<int> WithPause(Options o, Func<Task<int>> run)
+    {
+        var code = await run();
+        if (o.PauseAtEnd) WslRemoteSetup.Setup.Elevation.PauseIfOwnWindow();
+        return code;
+    }
 
     private static int Usage(string usage)
     {
@@ -277,6 +283,7 @@ internal sealed record Options
     public string? Listen { get; init; }
     public string? WslIp { get; init; }
     public string? HostKey { get; init; }
+    public bool PauseAtEnd { get; init; }
     public SshAuthentication? SshAuth { get; init; }
     public string? Error { get; init; }
 
@@ -287,6 +294,7 @@ internal sealed record Options
         {
             string? Next() => i + 1 < args.Length ? args[++i] : null;
             var key = args[i];
+            if (args[i] == "--pause-at-end") { o = o with { PauseAtEnd = true }; continue; }
             var value = Next();
             if (value is null) return o with { Error = $"{key} 옵션에 값이 필요합니다." };
             switch (key)

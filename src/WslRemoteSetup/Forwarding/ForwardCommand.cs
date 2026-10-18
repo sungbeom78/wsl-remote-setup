@@ -225,7 +225,7 @@ internal static class ForwardCommand
     }
 
     /// <summary>WSL 안 SSH 설치 기록(root 소유)에서 ED25519 서버 키 지문을 읽는다. 일반(소유자) 창에서만 사용.</summary>
-    private static async Task<string?> ReadRecordedHostKeyAsync(CommandRunner runner, string distro)
+    internal static async Task<string?> ReadRecordedHostKeyAsync(CommandRunner runner, string distro)
     {
         var r = await runner.RunAsync(new CommandSpec(WindowsForwarding.Wsl,
             ["--distribution", distro, "--exec", "/bin/cat", "/var/lib/wsl-remote-setup/ssh.json"]) { Timeout = TimeSpan.FromSeconds(60) });

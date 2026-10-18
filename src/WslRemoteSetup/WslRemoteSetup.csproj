@@ -20,6 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- WSL 안에서 실행하는 고정 스크립트(단일 EXE에 포함). 사용자 입력은 인수 검증 후 전달하고 셸 코드에 이어 붙이지 않는다. -->
+    <EmbeddedResource Include="..\..\resources\linux\*.sh" LogicalName="linux/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\WslRemoteSetup.Core\WslRemoteSetup.Core.csproj" />
   </ItemGroup>
 

@@ -17,4 +17,13 @@ public class ConfirmationTests
     [InlineData("?섏슜", ConfirmAnswer.Invalid)] // CP949/UTF-8 불일치로 깨진 입력
     [InlineData("yy", ConfirmAnswer.Invalid)]
     public void Parse(string? input, ConfirmAnswer expected) => Assert.Equal(expected, Confirmation.Parse(input));
+
+    [Theory]
+    [InlineData(null, ConfirmAnswer.No)]
+    [InlineData("", ConfirmAnswer.No)]       // Enter = 아니요
+    [InlineData("y", ConfirmAnswer.Yes)]
+    [InlineData("YES", ConfirmAnswer.Yes)]
+    [InlineData("n", ConfirmAnswer.No)]
+    [InlineData("응", ConfirmAnswer.No)]     // 알 수 없는 입력은 안전하게 아니요
+    public void ParseDefaultNo(string? input, ConfirmAnswer expected) => Assert.Equal(expected, Confirmation.ParseDefaultNo(input));
 }

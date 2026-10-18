@@ -21,4 +21,8 @@ public static class Confirmation
             _ => ConfirmAnswer.Invalid,
         };
     }
+
+    /// <summary>[y/N] — 재부팅·삭제처럼 되돌리기 어려운 선택. 빈 입력과 알 수 없는 입력은 모두 No.</summary>
+    public static ConfirmAnswer ParseDefaultNo(string? input) =>
+        (input ?? "").Trim().ToUpperInvariant() is "Y" or "YES" ? ConfirmAnswer.Yes : ConfirmAnswer.No;
 }
