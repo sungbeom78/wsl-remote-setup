@@ -5,6 +5,7 @@ using WslRemoteSetup.Agent;
 using WslRemoteSetup.Core.Execution;
 using WslRemoteSetup.Core.Reporting;
 using WslRemoteSetup.Core.State;
+using WslRemoteSetup.Core.Wsl;
 using WslRemoteSetup.Core.Validation;
 using WslRemoteSetup.Forwarding;
 using WslRemoteSetup.Lifetime;
@@ -106,25 +107,60 @@ internal static class UninstallWizard
         else
         {
             Ui.Line($"{distro}를 이 계정에서 삭제할 수 있습니다.");
-            Ui.Line("  - 안에 있는 모든 파일·프로그램·설정이 영구히 지워지며 되살릴 수 없습니다.");
-            Ui.Line("  - 필요한 파일은 먼저 다른 곳에 백업하세요.");
+            Ui.Line("  - 안에 있는 모든 파일·프로그램·설정이 지워집니다.");
+            Ui.Line("  - 삭제 전에 백업 파일 하나로 통째로 저장해 두면, 나중에 그대로 되살릴 수 있습니다.");
             Ui.Line("  - WSL 프로그램 자체는 지우지 않습니다.");
             Console.Write("  삭제할까요? [y/N] ");
             if (Confirmation.ParseDefaultNo(Console.ReadLine()) == ConfirmAnswer.Yes)
             {
-                Console.Write($"  정말 삭제하려면 배포판 이름({distro})을 그대로 입력하세요: ");
-                var typed = Console.ReadLine()?.Trim();
-                if (string.Equals(typed, distro, StringComparison.Ordinal))
+                // 자동 실행이 남아 있으면 백업·삭제 중에 다시 켜질 수 있어, 자동 실행 중지 단계를 건너뛴 경우 먼저 멈춤 상태로 둔다.
+                if (skipped.Contains("자동 실행 중지")) FilePauseSource.Set(true);
+                string? backup = null;
+                var proceed = true;
+                Console.Write("  삭제하기 전에 백업할까요? (권장) [Y/n] ");
+                if (Confirmation.Parse(Console.ReadLine()) != ConfirmAnswer.No)
+                {
+                    backup = await BackupAsync(runner, distro, history);
+                    if (backup is null)
+                    {
+                        Ui.Blocked("백업을 마치지 못해 삭제하지 않습니다. 아무것도 지우지 않았습니다.");
+                        skipped.Add($"{distro} 삭제(백업 실패)");
+                        proceed = false;
+                    }
+                    else done.Add($"{distro} 백업");
+                }
+                else Ui.Note("백업 없이 삭제하면 되살릴 수 없습니다.");
+
+                string? typed = null;
+                if (proceed)
+                {
+                    Console.Write($"  정말 삭제하려면 배포판 이름({distro})을 그대로 입력하세요: ");
+                    typed = Console.ReadLine()?.Trim();
+                }
+                if (!proceed)
+                {
+                    // 백업 실패: 위에서 이미 안내하고 건너뜀으로 기록했다.
+                }
+                else if (string.Equals(typed, distro, StringComparison.Ordinal))
                 {
                     history.Begin($"{distro} 삭제");
-                    // 자동 실행이 남아 있으면 다시 켜질 수 있어, 자동 실행 중지 단계를 건너뛴 경우 먼저 멈춤 상태로 둔다.
-                    if (skipped.Contains("자동 실행 중지")) FilePauseSource.Set(true);
                     var psi = new ProcessStartInfo(Wsl) { UseShellExecute = false };
                     foreach (var a in new[] { "--unregister", distro }) psi.ArgumentList.Add(a);
                     using var p = Process.Start(psi)!;
                     p.WaitForExit();
                     history.Detail("종료코드", p.ExitCode.ToString(CultureInfo.InvariantCulture));
-                    if (p.ExitCode == 0) { history.Done("삭제함"); done.Add($"{distro} 삭제"); Ui.Line("✔ 삭제했습니다."); }
+                    if (p.ExitCode == 0)
+                    {
+                        history.Done("삭제함");
+                        done.Add($"{distro} 삭제");
+                        Ui.Line("✔ 삭제했습니다.");
+                        if (backup is not null)
+                        {
+                            Ui.Line("  나중에 되살리려면 일반 PowerShell 창에서 다음을 실행하세요:");
+                            Ui.Line($"    {DistroBackup.RestoreCommand(distro, backup)}");
+                            history.Detail("복원 명령", DistroBackup.RestoreCommand(distro, backup));
+                        }
+                    }
                     else { history.Fail("실패"); Ui.Blocked("삭제하지 못했습니다."); skipped.Add($"{distro} 삭제(실패)"); }
                 }
                 else { Ui.Line("이름이 달라 삭제하지 않았습니다."); skipped.Add($"{distro} 삭제"); }
@@ -200,6 +236,64 @@ internal static class UninstallWizard
         history.Detail("종료코드", r.ExitCode.ToString(CultureInfo.InvariantCulture));
         if (r.ExitCode == App.ExitOk) { history.Done("완료"); done.Add(title); Ui.Line("✔ 완료했습니다."); }
         else { history.Fail("완료하지 못함"); skipped.Add($"{title}(미완료)"); Ui.Blocked("완료하지 못했거나 취소되었습니다. 다시 실행하면 이어서 진행할 수 있습니다."); }
+    }
+
+    /// <summary>
+    /// `wsl --export`로 배포판을 tar 파일 하나로 저장한다. 경로는 사용자가 정하고(Enter = 문서\WSL 백업),
+    /// 기존 파일은 덮어쓰지 않으며 남은 공간을 먼저 확인한다. 성공(파일 확인)했을 때만 경로를 돌려준다.
+    /// </summary>
+    private static async Task<string?> BackupAsync(CommandRunner runner, string distro, OperationHistory history)
+    {
+        history.Begin($"{distro} 백업");
+        var df = await runner.RunAsync(new CommandSpec(Wsl, ["--distribution", distro, "--exec", "/usr/bin/df", "-B1", "--output=used", "/"]) { Timeout = TimeSpan.FromSeconds(60) });
+        var estimate = df.ExitedZero ? DistroBackup.ParseDfUsed(df.StandardOutput) : null;
+        history.Detail("사용 중인 크기(바이트)", estimate?.ToString(CultureInfo.InvariantCulture) ?? $"확인 실패 exit={df.ExitCode}");
+        if (estimate is { } est) Ui.Line($"  백업 크기는 약 {DistroBackup.Size(est)}입니다(압축하지 않음).");
+
+        var defaultPath = DistroBackup.DefaultPath(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), distro, DateTimeOffset.Now);
+        string? path = null;
+        for (var i = 0; i < 5 && path is null; i++)
+        {
+            Console.Write($"  백업 파일 위치 [{defaultPath}]: ");
+            var candidate = DistroBackup.Resolve(Console.ReadLine(), defaultPath, Directory.Exists);
+            long? free = null;
+            try { if (Path.GetPathRoot(candidate) is { Length: > 0 } root && !root.StartsWith(@"\\", StringComparison.Ordinal)) free = new DriveInfo(root).AvailableFreeSpace; }
+            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { }
+            var error = DistroBackup.Check(candidate, File.Exists(candidate), free, estimate);
+            if (error is null) path = candidate;
+            else Console.WriteLine($"    → {error}");
+        }
+        if (path is null) { history.Fail("경로 입력 실패"); return null; }
+
+        try { Directory.CreateDirectory(Path.GetDirectoryName(path)!); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Ui.Blocked($"폴더를 만들 수 없습니다: {ex.Message}");
+            history.Fail(ex.Message);
+            return null;
+        }
+        history.Detail("백업 파일", path);
+
+        // 실행 중이면 파일이 바뀌는 도중에 저장될 수 있어 먼저 끈다(SSH 접속은 끊김).
+        Ui.Line("  WSL을 끄고 백업합니다. 크기에 따라 몇 분 걸릴 수 있습니다...");
+        await runner.RunAsync(new CommandSpec(Wsl, ["--terminate", distro]) { Timeout = TimeSpan.FromSeconds(60) });
+        var psi = new ProcessStartInfo(Wsl) { UseShellExecute = false };
+        foreach (var a in new[] { "--export", distro, path }) psi.ArgumentList.Add(a);
+        using (var p = Process.Start(psi)!)
+        {
+            await p.WaitForExitAsync();
+            history.Detail("export 종료코드", p.ExitCode.ToString(CultureInfo.InvariantCulture));
+            var info = new FileInfo(path);
+            if (p.ExitCode != 0 || !info.Exists || info.Length == 0)
+            {
+                history.Fail("백업 파일 확인 실패");
+                return null;
+            }
+            history.Detail("백업 크기(바이트)", info.Length.ToString(CultureInfo.InvariantCulture));
+            Ui.Line($"✔ 백업했습니다: {path} ({DistroBackup.Size(info.Length)})");
+        }
+        history.Done("백업 완료");
+        return path;
     }
 
     private static async Task<bool> DistroExistsAsync(CommandRunner runner, string distro)
