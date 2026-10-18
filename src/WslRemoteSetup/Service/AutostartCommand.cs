@@ -142,15 +142,17 @@ internal static class AutostartCommand
             {
                 var binPath = $"\"{ProtectedPaths.InstalledExe}\" service";
                 history.Detail("서비스 이름", ProtectedPaths.ServiceName);
-                history.Detail("실행 계정", "LocalSystem");
+                history.Detail("실행 계정", "LocalSystem, 시작 유형 자동(지연 없음)");
                 history.Detail("명령", binPath);
                 if (plan.Service is null)
                 {
-                    Must(runner, Sc, ["create", ProtectedPaths.ServiceName, "binPath=", binPath, "start=", "delayed-auto", "obj=", "LocalSystem", "DisplayName=", "WSL Remote Setup Network Manager"]);
+                    Must(runner, Sc, ["create", ProtectedPaths.ServiceName, "binPath=", binPath, "start=", "auto", "obj=", "LocalSystem", "DisplayName=", "WSL Remote Setup Network Manager"]);
                     Must(runner, Sc, ["description", ProtectedPaths.ServiceName, "WslRemoteSetup: 승인된 SSH 연결 전달 규칙 하나만 관리합니다."]);
                     Must(runner, Sc, ["failure", ProtectedPaths.ServiceName, "reset=", "86400", "actions=", "restart/60000/restart/60000//"]);
                 }
                 else history.Note("서비스가 이미 등록되어 있음(경로 동일)");
+                // 부팅 직후 연결 통로를 빨리 복구하도록 지연 없는 자동 시작(G2 무인 실행 POC 실측: 지연 시작은 약 2분 20초 늦음).
+                Must(runner, Sc, ["config", ProtectedPaths.ServiceName, "start=", "auto"]);
                 Own("service", ProtectedPaths.ServiceName, "네트워크 관리부", binPath);
                 runner.RunAsync(new CommandSpec(Sc, ["start", ProtectedPaths.ServiceName]) { Timeout = TimeSpan.FromSeconds(30) }).GetAwaiter().GetResult();
                 history.Done("등록·시작 요청");
@@ -301,7 +303,7 @@ internal static class AutostartCommand
             $"{ProtectedPaths.InstallDirectory} (관리자만 수정 가능)");
         Ui.Item(2, "연결 규칙 저장", "저장", $"외부 {p.Policy.ListenPort}번으로 들어온 접속을 WSL의 SSH로 전달. 처음 등록한 WSL 서버일 때만 허용");
         Ui.Item(3, "백그라운드 연결 관리 프로그램", p.Service is null ? "새로 등록" : "변경 없음",
-            "컴퓨터가 켜지면 자동 시작. WSL 주소가 바뀌면 연결 규칙만 고쳐 줌. 문제가 생기면 자동으로 다시 시작");
+            "컴퓨터가 켜지면 바로 시작. WSL 주소가 바뀌면 연결 규칙만 고쳐 줌. 문제가 생기면 자동으로 다시 시작");
         Ui.Item(4, "로그인하면 자동 실행", p.TaskExists ? "변경 없음" : "새로 등록",
             $"{p.OwnerName}으로 로그인하면 WSL을 켜 두고 1분마다 연결 점검 (관리자 권한 없이, 비밀번호 저장 안 함)");
         Ui.Item(5, "지금 바로 한 번 실행", "실행", "다시 로그인하지 않아도 바로 동작");
