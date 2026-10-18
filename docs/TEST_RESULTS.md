@@ -139,3 +139,22 @@
 | terminate/shutdown 호출 | 해당 없음 | 호출하지 않음 |
 | T14 RDP 끊기·잠금 상태 유지 | NOT_TESTED | |
 | T15/T16 로그아웃·재부팅·pause 후 shutdown | NOT_TESTED | 별도 승인 대상 |
+
+## 2026-10-18 — M4 WSL OpenSSH 서버 (사용자 승인, 사용자가 직접 sudo 실행)
+
+- 명령: 사용자 일반 PowerShell에서 `wsl -d Ubuntu-24.04 -- sudo bash …/resources/linux/install-openssh.sh --user linux_admin --installation-id 5f3c9a10-…`
+  - sudo 비밀번호는 사용자가 직접 입력했다(1회 재입력).
+- 사후 검증: `resources/linux/verify-ssh.sh`(읽기 전용)
+
+| 항목 | 결과 | 실제값 |
+|---|---|---|
+| 패키지 설치 | PASS | openssh-server 1:9.6p1-3ubuntu13.20 (도구가 설치함, 기존 설치 없음). openssh-client 13.19 → 13.20 동반 업그레이드 |
+| drop-in 소유·내용 | PASS | `10-wsl-remote-setup.conf` 하나뿐, 마커 있음 |
+| `sshd -t` | PASS | |
+| `sshd -T` 유효값 | PASS | permitrootlogin no, allowusers linux_admin, pubkey yes, password yes(임시), permitemptypasswords no, port 22 |
+| 서비스·리스너 | PASS | ssh.socket enabled/active, 0.0.0.0:22, [::]:22 |
+| SSH 배너 (WSL 내부 127.0.0.1:22) | PASS | `SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.20` |
+| host key 지문 | 기록 | ED25519 `SHA256:qjDdYL7ZZ9YgGsiu6CQ9etjth6qZm4SDvHVUPU3MsR8`, ECDSA `SHA256:8K7Y/…`, RSA `SHA256:ETKw…` |
+| Windows localhost:22 | 관찰 | WSL localhost 포워딩으로 127.0.0.1/::1:22만 수신하고 배너 응답. LAN 노출은 없음 |
+| 실제 SSH 인증(비밀번호/공개키) | NOT_TESTED | |
+| LAN 경로 | NOT_TESTED | 포워딩·방화벽 미구성 |
