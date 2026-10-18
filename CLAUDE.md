@@ -12,6 +12,8 @@ Windows PC에 Ubuntu WSL 2, SSH, Windows 원격 계정/RDP, 방화벽, Windows�
 
 ## G2에 대해 유지할 맥락
 
+- 이 저장소는 공개용이라 주소·계정·포트·ID를 예시 값으로 바꿔 두었다. 실제 값은 `.local/REAL_VALUES.md`(Git 제외)에서 확인한다.
+  새로 기록하는 문서에도 실제 값 대신 예시 값을 쓴다(공개 전 `.local/backup/sanitize.pl`로 다시 점검).
 - 이전 기록상 Windows Pro, Wi-Fi, OS에서 직접 설정한 고정 IPv4 `192.168.1.222`다.
 - 실제 버전·빌드·주소·어댑터·게이트웨이·DNS는 읽기 전용 진단으로 확인한다.
 - `owneradmin`은 이전에 사용자가 생성하려던 계정이다. 실제 존재와 권한을 검사한다.
