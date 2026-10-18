@@ -145,3 +145,19 @@
 - 배포 묶음: `artifacts/release/`에 `WslRemoteSetup.exe`(e420717)와 매뉴얼(14장)이 있다.
 - 이 PC에 PowerPoint와 LibreOffice가 없어 실제 PowerPoint 렌더링은 확인하지 못했다(NOT_TESTED).
 - 다음: 사용자가 매뉴얼대로 G2에서 되돌리기 → 재설치를 직접 시험한다.
+
+## 공개·배포 (2026-10-19)
+
+- 저장소: https://github.com/sungbeom78/wsl-remote-setup (공개, MIT)
+  - 공개 전에 커밋 기록 전체의 실제 값을 예시 값으로 바꿨다. 대응표는 `.local/REAL_VALUES.md`에 있다.
+- 릴리스: v0.1.0 (커밋 57f226c), 파일 5개. GitHub 쪽 SHA-256 값이 로컬 빌드와 모두 일치한다.
+  - `WslRemoteSetup-0.1.0-win-x64.exe`
+  - `WslRemoteSetup-0.1.0-win-arm64.exe`
+  - `WSL_Remote_Setup_Manual_KO-0.1.0.pptx`
+  - `WSL_Remote_Setup_Manual_EN-0.1.0.pptx`
+  - `SHA256SUMS.txt`
+- 참고: GitHub는 첨부 파일 이름의 한글을 지운다. 첨부 파일 이름은 영문으로 짓는다.
+- 다음 할 일:
+  - 사용자가 매뉴얼대로 G2 되돌리기 → 재설치를 직접 시험한다.
+  - 노트북 client 모드를 실기에서 확인한다.
+  - M7(깨끗한 PC)에서 전체 과정을 확인한다.
