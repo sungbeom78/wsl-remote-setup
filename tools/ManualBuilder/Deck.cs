@@ -9,6 +9,13 @@ namespace ManualBuilder;
 public sealed record P(string Text, double Size = 16, string Color = Pal.Ink, bool Bold = false, string Align = "l",
     bool Bullet = false, double After = 6, bool Mono = false, bool Italic = false);
 
+/// <summary>본문 글꼴(언어별). 한글은 항상 맑은 고딕으로 표시한다.</summary>
+public static class Fonts
+{
+    public static string Body { get; set; } = "맑은 고딕";
+    public static string BodyGdi { get; set; } = "Malgun Gothic";
+}
+
 public static class Pal
 {
     public const string Ink = "1F2A44";      // 남색(본문·제목)
@@ -63,7 +70,7 @@ public sealed class Slide
         foreach (var p in text ?? [])
         {
             any = true;
-            var font = p.Mono ? "Consolas" : "맑은 고딕";
+            var font = p.Mono ? "Consolas" : Fonts.Body;
             const string ea = "맑은 고딕"; // 한글은 항상 맑은 고딕(고정폭 글꼴엔 한글이 없음)
             var bullet = p.Bullet
                 ? $"<a:buFont typeface=\"Arial\"/><a:buChar char=\"•\"/>"

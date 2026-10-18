@@ -38,7 +38,7 @@ public static class Preview
                 float total = 0;
                 foreach (var p in s.Text)
                 {
-                    var font = new Font(p.Mono ? "Consolas" : "Malgun Gothic", (float)p.Size, p.Bold ? FontStyle.Bold : FontStyle.Regular, GraphicsUnit.Point);
+                    var font = new Font(p.Mono ? "Consolas" : Fonts.BodyGdi, (float)p.Size, p.Bold ? FontStyle.Bold : FontStyle.Regular, GraphicsUnit.Point);
                     var indent = p.Bullet ? 0.22f * Dpi : 0f;
                     var text = (p.Bullet ? "• " : "") + p.Text;
                     var size = g.MeasureString(text, font, new SizeF(Math.Max(1, inner.Width - indent), 10000), StringFormat.GenericTypographic);

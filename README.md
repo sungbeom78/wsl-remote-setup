@@ -141,10 +141,11 @@ dotnet test WslRemoteSetup.slnx
 dotnet publish src/WslRemoteSetup -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/release
 ```
 
-ARM64용은 `-r win-arm64`로 만듭니다. 설치 매뉴얼(PowerPoint)은 다음 명령으로 만들 수 있습니다.
+ARM64용은 `-r win-arm64`로 만듭니다. 설치 매뉴얼(PowerPoint, 한국어·영어)은 다음 명령으로 만들 수 있습니다.
 
 ```bash
-dotnet run --project tools/ManualBuilder -- artifacts/manual/WSL_Remote_Setup_설치매뉴얼.pptx
+dotnet run --project tools/ManualBuilder -- artifacts/manual/WSL_Remote_Setup_Manual_KO.pptx
+dotnet run --project tools/ManualBuilder -- artifacts/manual/WSL_Remote_Setup_Manual_EN.pptx --lang en
 ```
 
 | 폴더 | 내용 |
@@ -169,5 +170,6 @@ dotnet run --project tools/ManualBuilder -- artifacts/manual/WSL_Remote_Setup_�
 
 ## 내려받기
 
-[Releases](https://github.com/sungbeom78/wsl-remote-setup/releases)에서 EXE와 설치 매뉴얼(PowerPoint)을 받을 수 있습니다.
+[Releases](https://github.com/sungbeom78/wsl-remote-setup/releases)에서 EXE와 설치 매뉴얼(PowerPoint, 한국어·영어)을 받을 수 있습니다.
+An English installation manual is also available on the Releases page (the program's screens are in Korean).
 대부분의 PC는 `win-x64`, ARM 노트북은 `win-arm64`를 받으세요.
