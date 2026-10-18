@@ -142,6 +142,20 @@ internal static class UninstallWizard
             else skipped.Add("주소 고정 해제");
         }
 
+        // (선택) 이 도구가 바꾼 절전 설정 되돌리기(관리자 권한 불필요)
+        if (Power.PowerCommand.HasBackup)
+        {
+            Console.WriteLine();
+            Ui.Line("이 도구로 '전원 연결 시 절전 안 함'을 적용해 두었습니다. 이전 절전 시간으로 되돌릴 수 있습니다.");
+            Ui.Line("  - 되돌리면 쓰지 않을 때 PC가 잠들고, 잠든 동안에는 다른 기기에서 접속할 수 없습니다.");
+            Console.Write("  이전 값으로 되돌릴까요? [y/N] ");
+            if (Confirmation.ParseDefaultNo(Console.ReadLine()) == ConfirmAnswer.Yes)
+            {
+                if (await Power.PowerCommand.RestoreAsync(confirm: false) == App.ExitOk) done.Add("절전 설정 복원"); else skipped.Add("절전 설정 복원(미완료)");
+            }
+            else skipped.Add("절전 설정 복원");
+        }
+
         // 5. 설치 이력
         Step(5, "설치 이력");
         Ui.Line("이 도구가 설치했거나 사용한 프로그램(지우지 않음)과 직접 지우는 방법:");

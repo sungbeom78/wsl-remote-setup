@@ -3,7 +3,9 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- 기본 win-x64. ARM64 노트북용은 publish -r win-arm64 (ADR 0009) -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <RootNamespace>WslRemoteSetup</RootNamespace>
     <AssemblyName>WslRemoteSetup</AssemblyName>
     <Version>0.1.0</Version>

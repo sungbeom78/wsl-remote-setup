@@ -83,7 +83,10 @@ public sealed class WindowsProbe(ICommandRunner runner)
             PendingReboot: ProbePendingReboot(),
             HypervisorPresent: hypervisor,
             VirtualMachinePlatform: OptionalFeature("VirtualMachinePlatform"),
-            WslOptionalComponent: OptionalFeature("Microsoft-Windows-Subsystem-Linux"));
+            WslOptionalComponent: OptionalFeature("Microsoft-Windows-Subsystem-Linux"))
+        {
+            IsArm64 = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture == System.Runtime.InteropServices.Architecture.Arm64,
+        };
     }
 
     private static bool? ProbePendingReboot()

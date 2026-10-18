@@ -144,6 +144,8 @@ internal static class StatusCommand
         var banner = await WindowsForwarding.ReadBannerAsync(IPAddress.Parse(listen), port, TimeSpan.FromSeconds(3));
         h.Detail("수신", listening.ToString());
         h.Detail("SSH 응답", banner ?? "없음");
+        var sleep = Power.PowerCommand.Read();
+        h.Detail("절전(AC, 초)", $"standby={sleep.AcStandbySeconds} hibernate={sleep.AcHibernateSeconds} battery={sleep.HasBattery}");
 
         return new StatusFacts
         {
@@ -170,6 +172,7 @@ internal static class StatusCommand
             ListenAddressPresent = present,
             AddressIsDhcp = dhcp,
             CurrentAddress = present == true ? null : currentAddress,
+            Sleep = sleep,
             Now = now,
         };
     }

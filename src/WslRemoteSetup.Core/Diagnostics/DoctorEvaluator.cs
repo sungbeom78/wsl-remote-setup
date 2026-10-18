@@ -36,7 +36,9 @@ public static class DoctorEvaluator
             ? new("OS_EDITION", "Windows 에디션", CheckStatus.Warn, $"{label}: Home은 RDP 호스트가 없어 SSH 전용으로 진행합니다.")
             : new("OS_EDITION", "Windows 에디션", CheckStatus.Pass, label));
         if (!os.Is64Bit)
-            r.Add(new("OS_ARCH", "아키텍처", CheckStatus.Fail, "x64 Windows만 지원합니다."));
+            r.Add(new("OS_ARCH", "아키텍처", CheckStatus.Fail, "64비트 Windows만 지원합니다."));
+        else if (os.IsArm64)
+            r.Add(new("OS_ARCH", "아키텍처", CheckStatus.Warn, "ARM64 Windows: 노트북 접속 도우미(client)는 지원하지만, 서버 설치는 아직 시험하지 않았습니다."));
         if (os.PendingReboot == true)
             r.Add(new("OS_REBOOT", "재부팅 대기", CheckStatus.Warn, "재부팅 대기 중인 변경이 있습니다. 재부팅은 사용자 승인 후 진행합니다."));
     }

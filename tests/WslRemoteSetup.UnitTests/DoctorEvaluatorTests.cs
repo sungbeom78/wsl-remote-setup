@@ -27,6 +27,15 @@ public class DoctorEvaluatorTests
         Assert.Equal(CheckStatus.Pass, Find(r, "LISTEN_PORT").Status);
         Assert.Equal(CheckStatus.NotTested, Find(r, "SSH_LAN_AUTH").Status);   // T20
         Assert.Equal(CheckStatus.NotTested, Find(r, "RDP_LAN_AUTH").Status);
+        Assert.DoesNotContain(r, x => x.Id == "OS_ARCH");
+    }
+
+    [Fact]
+    public void Arm64_server_is_warned_not_blocked()
+    {
+        var s = Fixtures.G2AfterBootstrap();
+        s = s with { Os = s.Os! with { IsArm64 = true } };
+        Assert.Equal(CheckStatus.Warn, Find(DoctorEvaluator.Evaluate(s, new DesiredConfiguration()), "OS_ARCH").Status);
     }
 
     [Fact]

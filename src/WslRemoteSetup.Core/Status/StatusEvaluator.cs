@@ -34,6 +34,8 @@ public sealed record StatusFacts
     public string? CurrentAddress { get; init; }
     /// <summary>추가 서비스: 이름·외부 포트·WSL 포트·수신 여부.</summary>
     public IReadOnlyList<(string Name, int ListenPort, int ConnectPort, bool? Listening)> Services { get; init; } = [];
+    /// <summary>전원 계획의 절전 설정. null이면 조회하지 않음(줄을 표시하지 않음).</summary>
+    public Power.SleepInfo? Sleep { get; init; }
     public DateTimeOffset Now { get; init; }
 }
 
@@ -156,6 +158,14 @@ public static class StatusEvaluator
                 "공유기에서 이 PC 주소를 고정 배정(DHCP 예약)하면 안전합니다."));
         else if (f.AddressIsDhcp == false)
             lines.Add(new("이 PC 주소", Health.Good, $"{f.ListenAddress} (고정 주소)"));
+
+        // 8. 절전(잠들면 접속 불가)
+        if (f.Sleep is not null)
+        {
+            var sleep = Power.SleepAdvisor.Line(f.Sleep);
+            lines.Add(sleep);
+            if (sleep.Health == Health.Warn) next.Add("이 PC가 잠들지 않게 하려면 'power keep-awake'를 실행하세요(전원 연결 시에만 적용).");
+        }
 
         if (f.SshAnswers == false && f.Paused != true && f.WslRunning == true && f.Listening == true)
             next.Add("WSL 안의 SSH 서버 상태를 확인해야 합니다.");

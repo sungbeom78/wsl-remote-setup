@@ -43,6 +43,8 @@ public sealed record OsInfo(
 {
     /// <summary>RDP 호스트 기능이 없는 Home 계열.</summary>
     public bool IsHomeEdition => EditionId.StartsWith("Core", StringComparison.OrdinalIgnoreCase);
+    /// <summary>ARM64 Windows. 서버 모드는 시험 장비가 없어 NOT_TESTED(ADR 0009).</summary>
+    public bool IsArm64 { get; init; }
 }
 
 public sealed record IdentityInfo(string UserName, string Sid, bool IsElevated, bool IsAdministratorsMember, bool IsRemoteSession);

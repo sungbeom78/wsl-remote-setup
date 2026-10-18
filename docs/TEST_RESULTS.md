@@ -528,3 +528,21 @@
 - 결과: **PASS** — 이름 SERVERPC, 192.168.1.222:1004, linux_admin, RDP 7389/ownerAdmin. 서버 키 지문 `SHA256:qjDdY…MsR8`가 설치 상태 기록과 일치. 파일에 비밀번호·설치 ID·SID 없음.
 - 로그: `%LOCALAPPDATA%\WslRemoteSetup\logs\history.log`
 - `client` 모드: 코드·단위 테스트(연결 정보 검증, config/known_hosts 편집·충돌, 공개키 등록 명령 정화)만 완료. 노트북 실기는 **NOT_TESTED**.
+
+## 2026-10-18 21:2x — ADR 0009 ③ ARM64 빌드 · ④ 절전 점검
+
+- **ARM64 게시 PASS**
+  - 명령: `dotnet publish src/WslRemoteSetup -c Release -r win-arm64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -p:DebugType=embedded -o .\artifacts\publish\win-arm64`
+  - 결과: `WslRemoteSetup.exe` 단일 파일(약 82 MB). PE 머신 형식 `AA64`(ARM64) 확인.
+  - ARM 장비에서의 실행은 **NOT_TESTED**. doctor는 ARM64 서버를 WARN으로 표시한다.
+- **절전 점검(G2, 읽기 전용) PASS**
+  - 전원 API로 읽은 값: AC 절전은 0(사용 안 함), AC 최대 절전은 10800초. `powercfg /q`의 0x2a30과 일치한다.
+  - `status`와 `power`가 "전원에 연결되어 있어도 3시간 동안 쓰지 않으면 잠듭니다"를 [확인 필요]로 표시한다.
+  - `power keep-awake` / `power restore`는 코드와 [Y/n]만 준비했다. G2 적용은 승인 대기(**NOT_TESTED**).
+- **관찰(별건)**
+  - `status`의 "자동 연결 관리: 실행되고 있지 않습니다"는 다음 상황 때문이다.
+    - POC 부팅 작업(BootAgent, S4U, 세션 0)의 에이전트가 계속 실행 중이다.
+    - 이 에이전트가 단일 실행 잠금을 쥐고 있다.
+    - 그래서 20:39 로그온 작업 에이전트는 바로 종료되었다.
+  - SSH 접속 자체는 정상이다.
+  - 해결: `autostart boot-poc-remove`로 POC 작업을 제거한다(관리자 창, 승인 필요). 그 뒤 로그온 작업을 다시 실행하거나 다시 로그인한다.
