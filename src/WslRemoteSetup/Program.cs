@@ -50,7 +50,7 @@ internal static class App
             {
                 "doctor" => await DoctorAsync(options),
                 "plan" => await PlanAsync(options),
-                "status" => Status(),
+                "status" => await WslRemoteSetup.Status.StatusCommand.RunAsync(),
                 "poc-lifetime" => await PocLifetimeAsync(options),
                 "forward" => await WslRemoteSetup.Forwarding.ForwardCommand.RunAsync(new(
                     sub ?? "", options.InstallationId, options.Listen, options.Port ?? DesiredConfiguration.DefaultListenPort,
@@ -110,7 +110,7 @@ internal static class App
                     break;
                 case "2":
                     await DoctorAsync(Options.Empty);
-                    Status();
+                    await WslRemoteSetup.Status.StatusCommand.RunAsync();
                     break;
                 case "3" or "4" or "5" or "6":
                     Console.WriteLine("이 기능은 아직 구현되지 않았습니다.");
@@ -199,31 +199,6 @@ internal static class App
         return poc.Results.Any(r => r.Status == CheckStatus.Fail) ? ExitChecksFailed : ExitOk;
     }
 
-    private static int Status()
-    {
-        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "WslRemoteSetup", "state", "install-state.json");
-        var result = new StateStore(path).Load();
-        Console.WriteLine();
-        Console.WriteLine($"설치 상태 파일: {path}");
-        switch (result.Outcome)
-        {
-            case LoadOutcome.NotFound:
-                Console.WriteLine("  이 도구로 진행한 설치 기록이 없습니다.");
-                return ExitOk;
-            case LoadOutcome.Loaded:
-                var s = result.State!;
-                Console.WriteLine($"  설치 ID {s.InstallationId}, 단계 {s.Phase}, 갱신 {s.UpdatedAt:yyyy-MM-dd HH:mm:ss}");
-                if (s.PendingAction is not null) Console.WriteLine($"  대기 작업: {s.PendingAction}");
-                if (s.LastError is not null) Console.WriteLine($"  마지막 오류: {s.LastError}");
-                return ExitOk;
-            default:
-                Console.WriteLine($"  [STATE_{result.Outcome.ToString().ToUpperInvariant()}] {result.Error}");
-                Console.WriteLine("  상태 파일을 초기화하지 않았습니다. 복구 절차가 필요합니다.");
-                return ExitChecksFailed;
-        }
-    }
-
     private static int Help()
     {
         Console.WriteLine($"""
@@ -233,7 +208,7 @@ internal static class App
               WslRemoteSetup.exe                 대화형 마법사
               WslRemoteSetup.exe doctor [옵션]   비파괴 진단
               WslRemoteSetup.exe plan [옵션]     현재 상태 기반 설치 계획(변경 없음)
-              WslRemoteSetup.exe status          설치 상태 파일 확인
+              WslRemoteSetup.exe status          서비스·자동 실행·SSH 접속 상태를 한눈에(읽기 전용)
               WslRemoteSetup.exe forward plan|apply|remove  SSH 연결 통로·방화벽 허용 규칙(apply/remove는 관리자 창)
               WslRemoteSetup.exe autostart plan|install|remove  로그인 시 자동 실행·백그라운드 연결 관리(install/remove는 관리자 창)
               WslRemoteSetup.exe pause | resume-monitoring  자동 복구 일시중지/재개(소유자 계정)
