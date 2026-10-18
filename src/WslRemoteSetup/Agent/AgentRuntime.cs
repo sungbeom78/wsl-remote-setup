@@ -161,11 +161,25 @@ internal static class AgentCommand
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
         log.Info($"에이전트 시작: 설치 {installationId:D}, 배포판 {distro}");
         var ticks = 0;
+        bool? lastDirectOk = null;
         try
         {
             while (!cts.IsCancellationRequested)
             {
                 var delay = await loop.TickAsync(cts.Token);
+
+                // 실제 경로 확인: 이 세션에서 WSL SSH(22번)에 직접 응답이 오는지. 상태가 바뀔 때만 기록한다.
+                if (loop.LastConfirmed is { } wslIp)
+                {
+                    var banner = await WindowsForwarding.ReadBannerAsync(wslIp, 22, TimeSpan.FromSeconds(5));
+                    var ok = banner?.StartsWith("SSH-2.0-", StringComparison.Ordinal) == true;
+                    if (ok != lastDirectOk)
+                    {
+                        if (ok) log.Info($"WSL SSH 직접 응답 정상({wslIp}:22)");
+                        else log.Warn($"WSL SSH 직접 응답 없음({wslIp}:22)");
+                        lastDirectOk = ok;
+                    }
+                }
                 UserPaths.WriteJsonAtomic(UserPaths.StatusFile, new
                 {
                     installationId,

@@ -84,6 +84,7 @@ internal sealed class NetworkManagerService : BackgroundService
         void OnAddressChanged(object? s, EventArgs e) => wake.Release();
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnAddressChanged;
         string? lastHold = null;
+        bool? lastPathOk = null;
         var watcher = Task.Run(async () =>
         {
             var delay = TimeSpan.FromSeconds(10); // 부팅 직후 주소 준비를 잠시 기다린다.
@@ -112,6 +113,18 @@ internal sealed class NetworkManagerService : BackgroundService
 
                     if (c.Coordinator.EnsureListening())
                         log.Write("INFO", $"{c.Key} 수신이 끊겨 있어 같은 규칙으로 다시 적용했습니다.");
+
+                    // 실제 경로 확인: 이 PC의 접속 주소로 들어가 WSL SSH가 응답하는지(설정 존재와 별개). 상태가 바뀔 때만 기록한다.
+                    var banner = await WindowsForwarding.ReadBannerAsync(System.Net.IPAddress.Parse(c.Policy.ListenAddress), c.Policy.ListenPort, TimeSpan.FromSeconds(5));
+                    var answers = banner?.StartsWith("SSH-2.0-", StringComparison.Ordinal) == true;
+                    if (answers != lastPathOk)
+                    {
+                        log.Write(answers ? "INFO" : "WARN", answers
+                            ? $"{c.Key} 경유 SSH 응답 정상"
+                            : $"{c.Key} 경유 SSH 응답 없음(수신={(System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(e => e.Port == c.Policy.ListenPort) ? "있음" : "없음")})");
+                        lastPathOk = answers;
+                    }
+                    if (!answers) delay = TimeSpan.FromSeconds(15); // 응답이 없을 때는 더 자주 확인
                 }
                 catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
                 {
