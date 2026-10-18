@@ -192,3 +192,17 @@
 | T20 G2 자체 TCP 검사 | PASS | 외부 인증은 아래 항목으로 따로 기록 |
 | T21 다른 LAN PC 실제 SSH 인증 | NOT_TESTED | |
 | T11 WSL 재시작 후 주소 변경 | PENDING | 자동 갱신은 M5. 그 전에는 `forward apply`를 다시 실행해야 함 |
+
+## 2026-10-18 10:48 — T21 다른 LAN PC 실제 SSH 인증 (사용자 수행)
+
+- 클라이언트: 같은 LAN(192.168.1.0/24)에 있는 사용자 PC. G2가 아님.
+- 명령: `ssh -p 1004 linux_admin@192.168.1.222`
+
+| 항목 | 결과 | 실제값 |
+|---|---|---|
+| 경로 | PASS | 클라이언트 → 192.168.1.222:1004 → portproxy → 172.24.220.111:22 |
+| host key 확인 | PASS | 첫 접속에서 표시된 ED25519 지문 `SHA256:qjDdYL7ZZ9YgGsiu6CQ9etjth6qZm4SDvHVUPU3MsR8`이 등록값과 같아 사용자가 수락함 |
+| 인증 | PASS (비밀번호) | `linux_admin` 비밀번호 로그인 성공. Ubuntu 24.04.5 셸 진입 |
+| 공개키 인증 | NOT_TESTED | 아직 키를 등록하지 않음 |
+| 관찰 | 기록 | 커널 6.18.54.1-microsoft-standard-WSL2(이전 6.18.40.1 — WSL 자동 업데이트). eth0 주소는 172.24.220.111로 변화 없음 |
+| 확인할 것 | PENDING | SSH 세션만 있고 wsl.exe 클라이언트(keeper)가 없을 때 배포판이 유지되는지. M5 수명 설계에 반영한다 |
