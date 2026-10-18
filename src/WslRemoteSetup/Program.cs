@@ -48,6 +48,7 @@ internal static class App
                 "doctor" => await DoctorAsync(options),
                 "plan" => await PlanAsync(options),
                 "status" => Status(),
+                "poc-lifetime" => await PocLifetimeAsync(options),
                 "help" or "--help" or "-h" or "/?" => Help(),
                 "version" or "--version" => PrintVersion(),
                 "install" or "resume" or "repair" or "pause" or "resume-monitoring" or "uninstall" => NotYet(command),
@@ -157,6 +158,26 @@ internal static class App
         return ExitOk;
     }
 
+    /// <summary>개발용 M3 실기 POC. 배포판을 기동한다. 사용자 승인 후에만 실행한다(help에 표시하지 않음).</summary>
+    private static async Task<int> PocLifetimeAsync(Options o)
+    {
+        var desired = o.ToDesired();
+        var invalid = desired.Validate();
+        if (invalid.Count > 0) { invalid.ToList().ForEach(Console.Error.WriteLine); return ExitUsage; }
+
+        Console.WriteLine($"M3 POC — WSL 수명 실험: {desired.DistroName} (배포판을 기동합니다. terminate/shutdown은 하지 않습니다)");
+        var poc = new WslRemoteSetup.Lifetime.LifetimePoc(desired.DistroName, TimeSpan.FromSeconds(o.HoldSeconds ?? 120), TimeSpan.FromSeconds(180));
+        await poc.RunAsync(CancellationToken.None);
+        Console.WriteLine();
+        ConsoleReport.PrintChecks(poc.Results);
+        if (o.JsonPath is not null)
+        {
+            File.WriteAllText(o.JsonPath, JsonSerializer.Serialize(new { poc.Timeline, poc.Results }, StateStore.JsonOptions), new UTF8Encoding(false));
+            Console.WriteLine($"JSON 저장: {Path.GetFullPath(o.JsonPath)}");
+        }
+        return poc.Results.Any(r => r.Status == CheckStatus.Fail) ? ExitChecksFailed : ExitOk;
+    }
+
     private static int Status()
     {
         var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -229,6 +250,7 @@ internal sealed record Options
     public string? LinuxUser { get; init; }
     public int? Port { get; init; }
     public string? JsonPath { get; init; }
+    public int? HoldSeconds { get; init; }
     public string? Error { get; init; }
 
     public static Options Parse(string[] args)
@@ -250,6 +272,10 @@ internal sealed record Options
                     o = o with { Port = p };
                     break;
                 case "--json": o = o with { JsonPath = value }; break;
+                case "--hold":
+                    if (!int.TryParse(value, out var h) || h is < 10 or > 3600) return o with { Error = "--hold는 10~3600초여야 합니다." };
+                    o = o with { HoldSeconds = h };
+                    break;
                 default: return o with { Error = $"알 수 없는 옵션: {key}" };
             }
         }

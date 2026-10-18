@@ -9,7 +9,7 @@
 | M0 G2 진단·현황·변경 계획 | **완료** | `.local/G2_ENVIRONMENT_REPORT.md`, `.local/G2_ENVIRONMENT.json` |
 | M1 WSL·Ubuntu·개발 도구 | **완료** | B3 WSL2 PASS, B4 Ubuntu-24.04/linux_admin PASS, B5 Git 2.55 + .NET SDK 10.0.402 PASS |
 | M2 솔루션·doctor·plan·상태·단위 테스트 | **완료** | 빌드 경고 0, 단위 테스트 88/88 통과, G2 실기 doctor/plan/status 확인 |
-| M3 권한 분리·WSL 수명 POC | **진행 중** | 코드·테스트 단계 완료(단위 131, 통합 5 통과). 실기 POC(서비스·수명·일반 계정)는 승인 대기 |
+| M3 권한 분리·WSL 수명 POC | **진행 중** | 코드·테스트 완료(단위 135, 통합 5 통과). WSL 수명 실기 POC PASS(keeper 방식). 서비스 컨텍스트·일반 계정 POC는 승인 대기 |
 | M4~M7 | 대기 | — |
 
 ## 보존 대상 (변경 금지)
@@ -72,9 +72,16 @@
   - 1차 실행에서 결함 1건 발견 후 수정: 초과 요청 처리 시 교착이 생겼다. 이제 서버가 메시지 끝까지 읽어 버린 뒤 응답한다.
 - 미검증: 다른 로컬 사용자 거부(T10 실계정), 서비스 컨텍스트(SYSTEM)에서의 가장, 파이프 선점(squatting) 방지의 실효성, 클라이언트 측 서버 신원 확인.
 
+## M3 실기: WSL 수명 POC (2026-10-18)
+
+- `Lifetime/WslLifetimeKeeper`: 셸 없이 `wsl.exe --distribution <d> --exec /bin/sleep infinity` 클라이언트 하나를 보유한다. Release는 자기 프로세스만 종료한다.
+- `poc-lifetime` 명령: 개발용이며 help에는 표시하지 않는다.
+- `Core/Wsl/WslOutputParser`: `--list --running --quiet`를 현지화 문구와 무관하게 해석한다.
+- 결과: 클라이언트가 없으면 16초 뒤 유휴 종료된다. keeper를 보유한 120초 동안 계속 Running이었고 주소도 유지됐다. 해제하면 16초 뒤 종료된다. 상세는 ADR 0003과 TEST_RESULTS에 있다.
+
 ## 다음 단계
 
-1. **M3 POC (실기)** — 승인 필요
+1. **M3 POC (실기, 남은 부분)** — 승인 필요
    - 소유자 세션에서 WSL 수명 유지 방식 실험(foreground `wsl.exe` 관리)
    - 테스트 서비스 등록: 서비스 등록은 승인 대상
    - T09(일반 사용자 소유자) 검증용 일반 테스트 계정: 생성은 승인 대상. 생성하지 않으면 NOT_TESTED로 남긴다.

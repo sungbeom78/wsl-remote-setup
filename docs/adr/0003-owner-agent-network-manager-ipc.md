@@ -70,6 +70,23 @@ WSL 배포판은 소유자 Windows 계정의 세션에서만 다룰 수 있다(A
 - **portproxy 대신 mirrored 네트워킹**: 1.0 범위 밖. ADR로 후속 검토.
 - **TCP loopback이나 파일 기반 IPC**: 호출자 인증이 약해 배제.
 
+## WSL 수명 유지 실기 결과 (2026-10-18, G2)
+
+- 실행: `WslRemoteSetup.exe poc-lifetime --hold 120`, 실행 주체 ownerAdmin 비승격. `.wslconfig` 없음(기본값).
+- 결과
+  - 일회성 명령이 끝나 클라이언트가 없어지면 **약 16초 뒤 배포판이 Stopped**가 된다. systemd가 켜져 있어도 마찬가지다.
+  - keeper(`wsl.exe --distribution Ubuntu-24.04 --exec /bin/sleep infinity`)를 보유한 120초 동안 10초 간격 표본 12개가 모두 Running이었다.
+  - eth0 주소는 172.24.220.111로 유지됐다.
+  - keeper만 해제하자 16초 뒤 Stopped가 되었고, 남은 wsl.exe 클라이언트는 없었다. terminate나 shutdown은 호출하지 않았다.
+- 결정
+  - 소유자 에이전트는 foreground wsl.exe 클라이언트 하나를 보유하는 방식으로 수명을 관리한다.
+  - pause는 "keeper 해제 + 재기동 금지"로 구현한다. 해제만으로 배포판이 자연 종료되므로 별도의 terminate는 필요 없다.
+- 남은 확인
+  - RDP 연결 끊기·잠금 상태에서 keeper가 유지되는지
+  - 로그아웃 시 keeper 종료(1.0 한계로 표시)
+  - 장시간 보유 시 메모리
+  - 배포판이 중지된 뒤 짧은 시간 안에 재기동하면 주소가 유지됐다. VM 유휴 종료 이후의 주소 변경(T11)은 아직 관찰하지 못했다.
+
 ## 제한·미검증 (M3 실기 POC에서 확인할 것)
 
 - 서비스 등록·실행은 승인 대상이다. 그 전까지 서비스 모드는 단위·통합 테스트(같은 사용자의 파이프)로만 검증한다.

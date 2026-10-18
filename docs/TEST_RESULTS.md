@@ -122,3 +122,20 @@
 | 통합 반복 3회 | PASS | 흔들림 없음 |
 | T09/T10 실계정(다른 로컬 사용자) | NOT_TESTED | 일반 테스트 계정이 필요하며 생성은 승인 대상 |
 | SYSTEM 서비스 컨텍스트 | NOT_TESTED | 서비스 등록은 승인 대상 |
+
+## 2026-10-18 — M3 실기 POC: WSL 수명 (사용자 승인: 배포판 기동 허용)
+
+- 환경: G2, WSL 3.0.3.0, Ubuntu-24.04(systemd 사용), `.wslconfig` 없음
+- 실행 주체: ownerAdmin 비승격 RDP 세션
+- 명령: `WslRemoteSetup.exe poc-lifetime --hold 120`
+- 로그: `.local/logs/poc_lifetime_g2.json`
+
+| 항목 | 결과 | 실제값 |
+|---|---|---|
+| A. 일회성 명령 뒤 유휴 종료 | PASS | `/bin/true` exit 0. 16초 뒤 Stopped. systemd만으로는 인스턴스가 유지되지 않음 |
+| B. keeper 보유 중 유지 | PASS | 120초 동안 표본 12개 모두 Running, keeper PID 유지 |
+| B. 보유 중 주소 안정 | PASS | 172.24.220.111 → 172.24.220.111 (A 단계와도 같음) |
+| C. keeper 해제 뒤 유휴 종료 | PASS | 16초 뒤 Stopped, 남은 wsl.exe 없음, 재기동 없음 |
+| terminate/shutdown 호출 | 해당 없음 | 호출하지 않음 |
+| T14 RDP 끊기·잠금 상태 유지 | NOT_TESTED | |
+| T15/T16 로그아웃·재부팅·pause 후 shutdown | NOT_TESTED | 별도 승인 대상 |
