@@ -189,10 +189,10 @@ internal static class AgentCommand
     {
         FilePauseSource.Set(paused);
         Console.WriteLine(paused
-            ? "자동 복구를 일시중지했습니다. 에이전트는 다음 점검(최대 60초) 때 keeper를 해제하고 WSL을 다시 시작하지 않습니다."
-            : "자동 복구를 재개했습니다. 다음 점검 때 keeper를 시작하고 포워딩을 확인합니다.");
+            ? "자동 연결 관리를 잠시 멈췄습니다. 1분 안에 WSL이 꺼지고, 다시 켤 때까지 SSH 접속이 되지 않습니다."
+            : "자동 연결 관리를 다시 켰습니다. 1분 안에 WSL이 켜지고 SSH 접속이 다시 됩니다.");
         if (paused)
-            Console.WriteLine("유지보수 중 'wsl --shutdown'을 하려면 이 일시중지를 먼저 적용하세요. 그렇지 않으면 에이전트가 WSL을 다시 시작합니다.");
+            Console.WriteLine("참고: WSL을 직접 끄는 작업(wsl --shutdown)은 이렇게 멈춘 뒤에 하세요. 멈추지 않으면 자동으로 다시 켜집니다.");
         return App.ExitOk;
     }
 }

@@ -286,3 +286,13 @@
 | 기록 단계 번호 | 관찰 | 기록은 [1] 상태 확인, [2]~[6] 설치. 화면은 [1/5]~[5/5]로 번호가 한 칸 다름(사소함) |
 | pause/resume 실기 | PENDING | WSL이 종료되어 열린 SSH 세션이 끊길 수 있어 별도 확인 필요 |
 | T15 로그아웃·재부팅 후 자동 복구 | NOT_TESTED | 별도 승인 대상 |
+
+## 2026-10-18 15:24~15:29 — pause/resume 실기 (사용자 승인: SSH 일시 단절 허용)
+
+| 항목 | 결과 | 실제값 |
+|---|---|---|
+| T16 `pause` | PASS | 38초 뒤 keeper 해제, 54초 뒤 WSL Stopped. 이후 120초 동안 재기동 없음. 상태 `paused: true, keeper: false` |
+| pause 중 접속 | 기대대로 | 1004 TCP는 수락되지만 SSH 응답 없음(WSL 꺼짐) |
+| `resume-monitoring` | PASS | 31초 뒤 keeper 재시작, 관리부 응답 `NoChange`, 1004 경유 배너 정상 |
+| T11 실제 주소 변경 | NOT_TESTED | 재기동 후에도 WSL 주소가 172.24.220.111로 같았다(NAT 대역 유지). 주소 변경 자동 갱신은 단위 테스트로만 확인 |
+| 화면 문구 | 수정 | pause/resume 안내의 "keeper" 표현을 쉬운 말로 바꿈(다음 설치 때 반영) |
