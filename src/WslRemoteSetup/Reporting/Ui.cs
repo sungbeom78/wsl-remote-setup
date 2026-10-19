@@ -18,7 +18,9 @@ internal static class Ui
         var path = WindowsForwarding.IsElevated()
             ? Path.Combine(ProtectedPaths.LogDirectory, "history.log")
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WslRemoteSetup", "logs", "history.log");
-        return new OperationHistory(path, operation, CurrentUserName());
+        var history = new OperationHistory(path, operation, CurrentUserName());
+        history.Detail("프로그램 빌드", App.BuildId);
+        return history;
     }
 
     public static string CurrentUserName()

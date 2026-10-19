@@ -23,8 +23,12 @@ internal static class App
     public const int ExitError = 4;
     public const int ExitCanceled = 5;
 
-    private static string Version =>
+    /// <summary>빌드 식별값(버전+커밋). 화면에 보이지 않고 작업 기록에만 남긴다.</summary>
+    internal static string BuildId =>
         typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
+
+    /// <summary>화면용 버전(예: 0.1.0). 커밋 값은 빼고 보여 준다(ADR 0006).</summary>
+    internal static string Version => BuildId.Split('+')[0];
 
     public static async Task<int> RunAsync(string[] args)
     {
@@ -84,7 +88,16 @@ internal static class App
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ERROR] {ex.GetType().Name}: {ex.Message}");
+            // 화면에는 쉬운 말만, 오류 종류·위치는 작업 기록에 남긴다(ADR 0006).
+            Console.Error.WriteLine($"예상하지 못한 문제로 멈췄습니다: {ex.Message}");
+            try
+            {
+                var h = WslRemoteSetup.Reporting.Ui.OpenHistory("오류");
+                h.Fail(ex.ToString());
+                h.Finish("중단");
+                Console.Error.WriteLine($"자세한 내용: {h.FilePath}");
+            }
+            catch (Exception logEx) when (logEx is IOException or UnauthorizedAccessException) { }
             return ExitError;
         }
     }
@@ -95,7 +108,7 @@ internal static class App
         Console.WriteLine();
         if (Console.IsInputRedirected)
         {
-            Console.Error.WriteLine("[UserInputRequired] 대화형 입력을 받을 수 없습니다. 'doctor', 'plan', 'status' 명령을 사용하세요.");
+            Console.Error.WriteLine("질문에 답할 수 있는 창이 아니라 메뉴를 열 수 없습니다. EXE를 더블클릭해 실행하거나 'status' 같은 명령을 사용하세요.");
             return ExitUserInputRequired;
         }
 
