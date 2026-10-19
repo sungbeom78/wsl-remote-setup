@@ -12,7 +12,7 @@ namespace ManualBuilder;
 public static partial class TranscriptDeck
 {
     private const double SlideW = 13.333;
-    private const int MaxLines = 30;
+    private const int MaxLines = 38;
     private const double FontPt = 11;
 
     private static readonly Dictionary<string, string> Palette = new()
@@ -50,7 +50,9 @@ public static partial class TranscriptDeck
             var day = DateTime.ParseExact(name[..8], "yyyyMMdd", CultureInfo.InvariantCulture);
             whens.Add(day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
             var label = "WSL Remote Setup";
-            foreach (var raw in File.ReadLines(f))
+            using var fs = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var sr = new StreamReader(fs);
+            while (sr.ReadLine() is { } raw)
             {
                 using var doc = JsonDocument.Parse(raw);
                 var r = doc.RootElement;
@@ -114,7 +116,7 @@ public static partial class TranscriptDeck
                         if (i > 0) EndLine();
                         var text = parts[i].Replace("\r", "", StringComparison.Ordinal);
                         if (text.Length == 0) continue;
-                        if (line is null && StepHeader().IsMatch(text))
+                        if (line is null && StepHeader().IsMatch(text) && !text.Contains("...", StringComparison.Ordinal))
                         {
                             step = text.Trim();
                             if (page!.Lines.Any(l => l.Count > 0)) NewPage();

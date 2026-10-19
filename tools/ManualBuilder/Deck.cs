@@ -141,6 +141,7 @@ public static class Deck
 
     public static void Write(string path, IReadOnlyList<Slide> slides, string title)
     {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         if (File.Exists(path)) File.Delete(path);
         using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
         void Add(string name, string content)
