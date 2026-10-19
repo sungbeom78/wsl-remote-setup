@@ -54,8 +54,11 @@ internal static class LinuxScripts
     }
 
     /// <summary>사용자가 직접 입력해야 하는 명령(passwd 등). 콘솔을 그대로 넘긴다.</summary>
-    public static int RunInteractive(string distro, string user, params string[] command) =>
-        RunVisibleCore(distro, user, ["--exec", .. command]);
+    public static int RunInteractive(string distro, string user, params string[] command)
+    {
+        Reporting.ScreenRecorder.Note($"(Linux 명령 '{Path.GetFileName(command[0])}' 화면 — 사용자가 직접 입력하며 기록하지 않음)");
+        return RunVisibleCore(distro, user, ["--exec", .. command], interactive: true);
+    }
 
     /// <summary>한 줄을 표준입력으로 넘겨 스크립트 실행(공개키 등록). 인수나 셸 문자열로 넘기지 않는다.</summary>
     public static (int Exit, string Output) RunWithInput(string distro, string user, string script, string inputLine, params string[] args)
@@ -73,9 +76,24 @@ internal static class LinuxScripts
         return (p.ExitCode, stdout.Result + stderr.Result);
     }
 
-    private static int RunVisibleCore(string distro, string user, string[] args)
+    private static int RunVisibleCore(string distro, string user, string[] args, bool interactive = false)
     {
-        using var p = Process.Start(Start(distro, user, args))!;
+        var psi = Start(distro, user, args);
+        // 화면 기록 중에는 스크립트 출력을 받아 같은 글자로 화면에 다시 쓴다(기록에 남도록). 입력이 필요한 명령은 그대로 둔다.
+        var tee = Reporting.ScreenRecorder.Active && !interactive;
+        if (tee)
+        {
+            psi.RedirectStandardOutput = psi.RedirectStandardError = true;
+            psi.StandardOutputEncoding = psi.StandardErrorEncoding = new UTF8Encoding(false);
+        }
+        using var p = Process.Start(psi)!;
+        if (tee)
+        {
+            p.OutputDataReceived += (_, e) => { if (e.Data is not null) Console.WriteLine(e.Data); };
+            p.ErrorDataReceived += (_, e) => { if (e.Data is not null) Console.Error.WriteLine(e.Data); };
+            p.BeginOutputReadLine();
+            p.BeginErrorReadLine();
+        }
         p.WaitForExit();
         return p.ExitCode;
     }

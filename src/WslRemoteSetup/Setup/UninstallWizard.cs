@@ -146,6 +146,7 @@ internal static class UninstallWizard
                     history.Begin($"{distro} 삭제");
                     var psi = new ProcessStartInfo(Wsl) { UseShellExecute = false };
                     foreach (var a in new[] { "--unregister", distro }) psi.ArgumentList.Add(a);
+                    Reporting.ScreenRecorder.Note($"(wsl.exe 화면: {distro} 삭제 — 기록하지 않음)");
                     using var p = Process.Start(psi)!;
                     p.WaitForExit();
                     history.Detail("종료코드", p.ExitCode.ToString(CultureInfo.InvariantCulture));
@@ -279,6 +280,7 @@ internal static class UninstallWizard
         await runner.RunAsync(new CommandSpec(Wsl, ["--terminate", distro]) { Timeout = TimeSpan.FromSeconds(60) });
         var psi = new ProcessStartInfo(Wsl) { UseShellExecute = false };
         foreach (var a in new[] { "--export", distro, path }) psi.ArgumentList.Add(a);
+        Reporting.ScreenRecorder.Note($"(wsl.exe 화면: {distro} 백업 진행 — 기록하지 않음)");
         using (var p = Process.Start(psi)!)
         {
             await p.WaitForExitAsync();

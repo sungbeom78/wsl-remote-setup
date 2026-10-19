@@ -23,6 +23,7 @@ internal static class InternalCommands
         history.Begin("wsl --install --no-distribution");
         var psi = new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "wsl.exe")) { UseShellExecute = false };
         foreach (var a in new[] { "--install", "--no-distribution" }) psi.ArgumentList.Add(a);
+        Reporting.ScreenRecorder.Note("(wsl.exe 화면: WSL 프로그램 설치 진행 — 기록하지 않음)");
         int exit;
         using (var p = Process.Start(psi)!) { p.WaitForExit(); exit = p.ExitCode; }
         // 종료코드 1이 "일부 적용 + 재부팅 필요"일 수 있어(G2 B3 실측) 판정은 마법사가 실제 상태를 다시 확인해 한다.

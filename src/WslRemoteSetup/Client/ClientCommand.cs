@@ -261,6 +261,7 @@ internal static class ClientCommand
     {
         var psi = new ProcessStartInfo(exe) { UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
+        Reporting.ScreenRecorder.Note($"({Path.GetFileName(exe)} 화면 — 사용자가 직접 입력하며 기록하지 않음)");
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"{Path.GetFileName(exe)} 실행 실패");
         proc.WaitForExit();
         return proc.ExitCode;

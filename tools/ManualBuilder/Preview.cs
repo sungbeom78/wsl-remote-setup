@@ -64,9 +64,64 @@ public static class Preview
                     problems.Add($"슬라이드 {i + 1}: '{s.Text[0].Text}' 필요 {total / Dpi:0.00}in > 상자 {inner.Height / Dpi:0.00}in");
                 }
             }
+            foreach (var t in slides[i].Terminals)
+            {
+                var problem = DrawTerminal(g, t);
+                if (problem is not null) problems.Add($"슬라이드 {i + 1}: {problem}");
+            }
             bmp.Save(Path.Combine(dir, $"slide-{i + 1:00}.png"), System.Drawing.Imaging.ImageFormat.Png);
         }
         return problems;
+    }
+
+    /// <summary>터미널 그리기. 한글은 맑은 고딕, 나머지는 Consolas로 조각을 나눠 이어 그린다. 넘치면 문제를 돌려준다.</summary>
+    public static string? DrawTerminal(Graphics g, TerminalInfo t, float dpi = Dpi)
+    {
+        var r = new RectangleF((float)t.X * dpi, (float)t.Y * dpi, (float)t.W * dpi, (float)t.H * dpi);
+        using (var bg = new SolidBrush(Hex(t.Bg))) g.FillRectangle(bg, r);
+        var inset = (float)t.Inset * dpi;
+        var x0 = r.X + inset;
+        var y = r.Y + inset;
+        using var mono = new Font("Consolas", (float)t.Size, FontStyle.Regular, GraphicsUnit.Point);
+        using var monoB = new Font("Consolas", (float)t.Size, FontStyle.Bold, GraphicsUnit.Point);
+        using var kor = new Font("Malgun Gothic", (float)t.Size, FontStyle.Regular, GraphicsUnit.Point);
+        using var korB = new Font("Malgun Gothic", (float)t.Size, FontStyle.Bold, GraphicsUnit.Point);
+        var lineH = mono.GetHeight(g);
+        var fmt = StringFormat.GenericTypographic;
+        fmt.FormatFlags |= StringFormatFlags.MeasureTrailingSpaces;
+        var maxRight = x0;
+        foreach (var line in t.Lines)
+        {
+            var x = x0;
+            foreach (var run in line)
+                foreach (var (text, hangul) in Segments(run.Text))
+                {
+                    var f = hangul ? (run.Bold ? korB : kor) : (run.Bold ? monoB : mono);
+                    using var b = new SolidBrush(Hex(run.Color));
+                    g.DrawString(text, f, b, x, y + (hangul ? -lineH * 0.08f : 0), fmt);
+                    x += g.MeasureString(text, f, int.MaxValue, fmt).Width;
+                }
+            maxRight = Math.Max(maxRight, x);
+            y += lineH;
+        }
+        if (y > r.Bottom - inset + 2) return $"터미널 줄이 상자를 넘침({t.Lines.Count}줄)";
+        if (maxRight > r.Right - inset + 2) return "터미널 줄이 너무 김";
+        return null;
+    }
+
+    private static IEnumerable<(string, bool)> Segments(string s)
+    {
+        var sb = new System.Text.StringBuilder();
+        bool? cur = null;
+        foreach (var ch in s)
+        {
+            var h = (ch >= 0x1100 && ch <= 0x11FF) || (ch >= 0x3130 && ch <= 0x318F) || (ch >= 0xAC00 && ch <= 0xD7A3)
+                    || ch is '…' or '·' or '※' or '✔' or '○' or '●' or '▲' or '✕' or '→' or '•' or '—';
+            if (cur is not null && h != cur) { yield return (sb.ToString(), cur.Value); sb.Clear(); }
+            cur = h;
+            sb.Append(ch);
+        }
+        if (sb.Length > 0) yield return (sb.ToString(), cur!.Value);
     }
 
     private static GraphicsPath Shape(string geom, RectangleF r)

@@ -16,6 +16,7 @@ internal static class Elevation
     public static Result RunSelfElevated(params string[] args)
     {
         var exe = Environment.ProcessPath ?? throw new InvalidOperationException("실행 파일 경로를 알 수 없습니다.");
+        args = [.. args, .. Reporting.ScreenRecorder.ChildArgs]; // 화면 기록 중이면 관리자 창도 기록
         foreach (var a in args)
             if (a.Any(c => c is '"' or '\0' or '\r' or '\n')) throw new ArgumentException("허용되지 않는 인수입니다.", nameof(args));
         var psi = new ProcessStartInfo(exe)

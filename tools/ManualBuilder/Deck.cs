@@ -34,6 +34,11 @@ public static class Pal
     public const string Code = "EEF2F5";
 }
 
+/// <summary>터미널 한 조각(글자·색). 굵게는 사용자가 입력한 글자 표시용.</summary>
+public sealed record Run(string Text, string Color, bool Bold = false, bool Italic = false);
+
+public sealed record TerminalInfo(double X, double Y, double W, double H, IReadOnlyList<IReadOnlyList<Run>> Lines, double Size, string Bg, double Inset);
+
 public sealed record ShapeInfo(double X, double Y, double W, double H, string? Fill, string? Line, string Geom, string Anchor, double Inset, IReadOnlyList<P> Text, string Name);
 
 public sealed class Slide
@@ -87,6 +92,36 @@ public sealed class Slide
     }
 
     public Slide Text(double x, double y, double w, double h, params P[] text) => Box(x, y, w, h, text, name: "Text", inset: 0);
+
+    /// <summary>터미널 화면: 줄마다 색이 다른 여러 조각(고정폭 글꼴, 한글은 맑은 고딕). 글자는 바꾸지 않는다.</summary>
+    public List<TerminalInfo> Terminals { get; } = [];
+
+    public Slide Terminal(double x, double y, double w, double h, IReadOnlyList<IReadOnlyList<Run>> lines, double size, string bg, double inset = 0.2)
+    {
+        Terminals.Add(new TerminalInfo(x, y, w, h, lines, size, bg, inset));
+        var id = _id++;
+        var sb = _sp;
+        sb.Append($"<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"Terminal {id}\"/><p:cNvSpPr txBox=\"1\"/><p:nvPr/></p:nvSpPr>");
+        sb.Append($"<p:spPr><a:xfrm><a:off x=\"{E(x)}\" y=\"{E(y)}\"/><a:ext cx=\"{E(w)}\" cy=\"{E(h)}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>");
+        sb.Append($"<a:solidFill><a:srgbClr val=\"{bg}\"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr>");
+        var ins = E(inset);
+        sb.Append($"<p:txBody><a:bodyPr wrap=\"square\" lIns=\"{ins}\" tIns=\"{ins}\" rIns=\"{ins}\" bIns=\"{ins}\" anchor=\"t\" rtlCol=\"0\"><a:noAutofit/></a:bodyPr><a:lstStyle/>");
+        var sz = (int)Math.Round(size * 100);
+        foreach (var line in lines)
+        {
+            sb.Append("<a:p><a:pPr algn=\"l\" marL=\"0\" indent=\"0\"><a:lnSpc><a:spcPct val=\"100000\"/></a:lnSpc><a:spcAft><a:spcPts val=\"0\"/></a:spcAft><a:buNone/></a:pPr>");
+            foreach (var r in line.Where(r => r.Text.Length > 0))
+            {
+                sb.Append($"<a:r><a:rPr lang=\"ko-KR\" altLang=\"en-US\" sz=\"{sz}\" b=\"{(r.Bold ? 1 : 0)}\" i=\"{(r.Italic ? 1 : 0)}\" dirty=\"0\">");
+                sb.Append($"<a:solidFill><a:srgbClr val=\"{r.Color}\"/></a:solidFill><a:latin typeface=\"Consolas\"/><a:ea typeface=\"맑은 고딕\"/><a:cs typeface=\"Consolas\"/></a:rPr>");
+                sb.Append($"<a:t xml:space=\"preserve\">{X(r.Text)}</a:t></a:r>");
+            }
+            sb.Append($"<a:endParaRPr lang=\"ko-KR\" sz=\"{sz}\" dirty=\"0\"/></a:p>");
+        }
+        if (lines.Count == 0) sb.Append("<a:p><a:endParaRPr lang=\"ko-KR\" dirty=\"0\"/></a:p>");
+        sb.Append("</p:txBody></p:sp>");
+        return this;
+    }
 
     public string Xml() =>
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +

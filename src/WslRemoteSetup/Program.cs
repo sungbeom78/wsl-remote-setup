@@ -12,7 +12,10 @@ using WslRemoteSetup.Core.Validation;
 using WslRemoteSetup.Probing;
 
 Console.OutputEncoding = Encoding.UTF8;
-return await App.RunAsync(args);
+args = WslRemoteSetup.Reporting.ScreenRecorder.Start(args);
+var exitCode = await App.RunAsync(args);
+WslRemoteSetup.Reporting.ScreenRecorder.Stop(exitCode);
+return exitCode;
 
 internal static class App
 {

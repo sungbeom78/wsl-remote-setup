@@ -134,6 +134,7 @@ internal static class InstallWizard
             history.Begin("배포판 설치");
             var psi = new ProcessStartInfo(Wsl) { UseShellExecute = false };
             foreach (var a in new[] { "--install", "-d", choices.Distro, "--no-launch" }) psi.ArgumentList.Add(a);
+            Reporting.ScreenRecorder.Note($"(wsl.exe 화면: {choices.Distro} 내려받기·설치 진행 — 기록하지 않음)");
             using (var p = Process.Start(psi)!) { p.WaitForExit(); history.Detail("종료코드", p.ExitCode.ToString(CultureInfo.InvariantCulture)); }
             snapshot = await new WindowsProbe(runner).CollectAsync();
             if ((snapshot.Wsl?.DistrosForCurrentUser ?? []).All(d => !string.Equals(d.Name, choices.Distro, StringComparison.OrdinalIgnoreCase)))

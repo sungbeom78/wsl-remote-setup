@@ -3,6 +3,13 @@ using DocumentFormat.OpenXml.Validation;
 using ManualBuilder;
 
 // 사용: dotnet run --project tools/ManualBuilder -- <출력.pptx> [미리보기폴더] [--lang ko|en]
+//      dotnet run --project tools/ManualBuilder -- --transcripts <기록폴더> <출력.pptx> [이미지폴더] [--mask 치환.json] [--title 제목]
+if (args.Length >= 3 && args[0] == "--transcripts")
+{
+    string? Opt(string name) => Array.IndexOf(args, name) is var k && k >= 0 && k + 1 < args.Length ? args[k + 1] : null;
+    var rest = args.Skip(3).TakeWhile(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
+    return TranscriptDeck.Run(args[1], args[2], rest.FirstOrDefault(), Opt("--mask"), Opt("--title") ?? "WSL Remote Setup");
+}
 // 영문판은 프로그램 화면(한국어)을 그대로 보여 주고 옆에 영어 뜻을 붙인다.
 var en = args.Contains("--lang=en") || (Array.IndexOf(args, "--lang") is var li && li >= 0 && li + 1 < args.Length && args[li + 1] == "en");
 var positional = args.Where((a, i) => !a.StartsWith("--", StringComparison.Ordinal) && (i == 0 || args[i - 1] != "--lang")).ToArray();
@@ -462,3 +469,4 @@ if (previewDir is not null && OperatingSystem.IsWindows())
     foreach (var p in problems) Console.WriteLine($"[넘침] {p}");
     Console.WriteLine($"미리보기 {slides.Count}장 → {Path.GetFullPath(previewDir)}, 넘침 {problems.Count}건");
 }
+return Environment.ExitCode;

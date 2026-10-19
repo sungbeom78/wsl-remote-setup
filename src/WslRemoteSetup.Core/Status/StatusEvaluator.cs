@@ -62,7 +62,7 @@ public static class StatusEvaluator
         {
             return new StatusReport(Health.Off, "아직 설정하지 않았습니다.",
                 [new("설정 기록", Health.Off, "이 도구로 설정한 기록이 없습니다.")],
-                ["처음 설정은 'plan'으로 계획을 확인한 뒤 진행합니다."]);
+                ["처음 설정은 메뉴 1(새로 설치)로 진행합니다."]);
         }
 
         var address = f.ListenAddress is null ? "?" : $"{f.ListenAddress}, {f.ListenPort}번";
