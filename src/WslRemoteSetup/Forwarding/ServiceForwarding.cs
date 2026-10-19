@@ -43,7 +43,8 @@ internal static class ServiceForwarding
         var applied = new List<ServiceForward>();
         var skipped = new List<string>();
         var snapshot = new WindowsProbe(runner).CollectAsync().GetAwaiter().GetResult();
-        var listening = snapshot.TcpListenPorts ?? [];
+        // 127.0.0.1에만 열린 수신(예: WSL이 만드는 wslrelay)은 외부 주소 포트와 겹치지 않으므로 제외한다(G2 실측, ADR 0011).
+        var listening = ServicePortsCommand.PortsInUseFor(listen);
         var proxies = snapshot.PortProxies ?? [];
         foreach (var s in services)
         {

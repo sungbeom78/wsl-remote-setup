@@ -109,6 +109,12 @@ internal static class ServicePortsCommand
         }
     }
 
+    /// <summary>이 주소로 수신할 때 겹치는 포트: 같은 주소나 모든 주소(0.0.0.0·::)에서 받는 것만. 127.0.0.1·::1 전용은 겹치지 않는다.</summary>
+    public static List<int> PortsInUseFor(string listenAddress) =>
+        [.. IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners()
+            .Where(e => !IPAddress.IsLoopback(e.Address) && (e.Address.Equals(IPAddress.Any) || e.Address.Equals(IPAddress.IPv6Any) || e.Address.ToString() == listenAddress))
+            .Select(e => e.Port).Distinct()];
+
     public static async Task<bool> ProbeAsync(IPAddress address, int port, TimeSpan timeout)
     {
         using var cts = new CancellationTokenSource(timeout);
@@ -167,7 +173,7 @@ internal static class ServicePortsCommand
         var typedName = (Console.ReadLine() ?? "").Trim().ToLowerInvariant();
         if (typedName.Length > 0) name = typedName;
 
-        var listening = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Select(e => e.Port).ToList();
+        var listening = PortsInUseFor(ctx.Listen);
         var used = listening.Concat(ctx.State.Services.Select(s => s.ListenPort)).Append(ctx.SshPort).ToList();
         var suggest = PortAdvisor.Suggest(chosen.Port < 1024 ? 8000 + chosen.Port : chosen.Port, used, [], [], null) ?? 8080;
         Console.Write($"  다른 기기에서 접속할 포트 [{suggest}]: ");
