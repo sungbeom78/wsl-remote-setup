@@ -46,7 +46,7 @@ internal static class App
             if (args.Length == 0) return await InteractiveAsync();
 
             var command = args[0].ToLowerInvariant();
-            var sub = command is "forward" or "autostart" or "network" or "power" && args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1].ToLowerInvariant() : null;
+            var sub = command is "forward" or "autostart" or "network" or "power" or "ports" && args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1].ToLowerInvariant() : null;
             if (command == "client")
             {
                 // client <파일>: 파일 경로는 대소문자를 바꾸지 않는다.
@@ -79,6 +79,7 @@ internal static class App
                 "autostart" => await WithPause(options, () => WslRemoteSetup.Service.AutostartCommand.RunAsync(new(sub ?? "", options.InstallationId, options.HostKey, options.Distro ?? DesiredConfiguration.DefaultDistro, options.PreLogin))),
                 "network" => await WithPause(options, () => WslRemoteSetup.Network.NetworkCommand.RunAsync(sub ?? "", options.Ip)),
                 "export-client" => await WithPause(options, () => WslRemoteSetup.Client.ExportClientCommand.RunAsync(options.Name, options.LinuxUser, options.OutDir)),
+                "ports" => await WslRemoteSetup.Forwarding.ServicePortsCommand.RunAsync(sub ?? ""),
                 "power" => await WithPause(options, () => WslRemoteSetup.Power.PowerCommand.RunAsync(sub ?? "")),
                 "pause" => WslRemoteSetup.Agent.AgentCommand.SetPaused(true),
                 "resume-monitoring" => WslRemoteSetup.Agent.AgentCommand.SetPaused(false),
@@ -123,6 +124,7 @@ internal static class App
             Console.WriteLine("4. 설정 변경 (포트·계정 등을 다시 묻고 적용)");
             Console.WriteLine("5. 자동 연결 관리 잠시 멈춤 / 다시 켜기");
             Console.WriteLine("6. 되돌리기 (외부 연결 닫기부터 단계별로)");
+            Console.WriteLine("7. 서비스 포트 관리 (WSL 안 서비스를 다른 기기에서 쓰기)");
             Console.WriteLine("0. 종료");
             Console.WriteLine($"   {WslRemoteSetup.Reporting.Contact.Line}");
             Console.WriteLine();
@@ -158,6 +160,9 @@ internal static class App
                 }
                 case "6":
                     await WslRemoteSetup.Setup.UninstallWizard.RunAsync();
+                    break;
+                case "7":
+                    await WslRemoteSetup.Forwarding.ServicePortsCommand.RunAsync("");
                     break;
                 default:
                     Console.WriteLine("잘못된 선택입니다.");
@@ -274,6 +279,7 @@ internal static class App
               WslRemoteSetup.exe network plan|apply|revert [--ip 주소]  (고급) 이 PC 주소 고정·해제(apply/revert는 관리자 창, 5분 안에 확인 없으면 자동 원복)
               WslRemoteSetup.exe pause | resume-monitoring  자동 복구 일시중지/재개(소유자 계정)
               WslRemoteSetup.exe power [keep-awake|restore]  절전 점검 · 전원 연결 시 절전 안 함 · 되돌리기
+              WslRemoteSetup.exe ports [list|connect]   서비스 포트 관리(목록·추가·삭제·지금 연결)
               WslRemoteSetup.exe export-client [--name G2] [--out 폴더]  노트북용 연결 정보 파일 만들기(서버, 소유자 계정)
               WslRemoteSetup.exe client <파일.wrs.json>   노트북에서 접속 준비(키·서버 확인·접속 이름·원격 데스크톱 바로가기)
               WslRemoteSetup.exe version

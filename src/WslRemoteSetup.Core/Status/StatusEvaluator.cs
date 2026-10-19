@@ -34,6 +34,8 @@ public sealed record StatusFacts
     public string? CurrentAddress { get; init; }
     /// <summary>추가 서비스: 이름·외부 포트·WSL 포트·수신 여부.</summary>
     public IReadOnlyList<(string Name, int ListenPort, int ConnectPort, bool? Listening)> Services { get; init; } = [];
+    /// <summary>추가 서비스가 WSL 안에서 응답하는지(이름별). 없으면 표시하지 않음. 꺼져 있어도 통로는 정상으로 본다(ADR 0011).</summary>
+    public IReadOnlyDictionary<string, bool> ServiceActive { get; init; } = new Dictionary<string, bool>();
     /// <summary>전원 계획의 절전 설정. null이면 조회하지 않음(줄을 표시하지 않음).</summary>
     public Power.SleepInfo? Sleep { get; init; }
     /// <summary>로그인 전 접속(부팅 작업)이 켜져 있는지. null이면 줄을 표시하지 않음.</summary>
@@ -145,7 +147,7 @@ public static class StatusEvaluator
 
         foreach (var svc in f.Services)
             lines.Add(new($"추가 서비스 {svc.Name}", svc.Listening == true ? Health.Good : svc.Listening == false ? Health.Warn : Health.Unknown,
-                svc.Listening == true ? $"열려 있음 (외부 {svc.ListenPort}번 → WSL {svc.ConnectPort}번, WSL 안 프로그램이 실행 중이어야 접속됨)"
+                svc.Listening == true ? $"열려 있음 (외부 {svc.ListenPort}번 → WSL {svc.ConnectPort}번){(f.ServiceActive.TryGetValue(svc.Name, out var up) ? (up ? " · WSL 서비스 응답 있음" : " · WSL 서비스 꺼짐(켜면 바로 연결)") : "")}"
                 : svc.Listening == false ? $"외부 {svc.ListenPort}번 통로가 열려 있지 않습니다(보통 1분 안에 자동 복구)." : "확인하지 못했습니다."));
 
         // 7. 이 PC 주소(DHCP 여부)

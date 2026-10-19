@@ -182,6 +182,7 @@ internal static class StatusCommand
             FirewallRuleExists = firewall,
             Listening = listening,
             SshAnswers = banner?.StartsWith("SSH-2.0-", StringComparison.Ordinal) == true,
+            ServiceActive = await ServiceActivityAsync(state, proxy?.ConnectAddress, h),
             Services = state.Services.Select(sv => (sv.Name, sv.ListenPort, sv.ConnectPort,
                 (bool?)IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(e => e.Port == sv.ListenPort && e.Address.ToString() == listen))).ToList(),
             ListenAddressPresent = present,
@@ -259,6 +260,19 @@ internal static class StatusCommand
         }
         raw = "없음";
         return ServiceState.NotInstalled;
+    }
+
+    /// <summary>추가 서비스가 WSL 안에서 응답하는지(읽기 전용 연결 시도). WSL 주소를 모르면 비워 둔다.</summary>
+    private static async Task<IReadOnlyDictionary<string, bool>> ServiceActivityAsync(InstallState state, string? wslAddress, Core.Reporting.OperationHistory h)
+    {
+        var result = new Dictionary<string, bool>();
+        if (wslAddress is null || !IPAddress.TryParse(wslAddress, out var ip)) return result;
+        foreach (var s in state.Services)
+        {
+            result[s.Name] = await ServicePortsCommand.ProbeAsync(ip, s.ConnectPort, TimeSpan.FromSeconds(1.5));
+            h.Detail($"추가 서비스 {s.Name}", $"WSL {wslAddress}:{s.ConnectPort} 응답={result[s.Name]}");
+        }
+        return result;
     }
 
     /// <summary>현재 사용자의 에이전트 프로세스(설치 경로 실행 파일의 agent 모드)가 있는지.</summary>

@@ -85,6 +85,7 @@ internal sealed class NetworkManagerService : BackgroundService
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnAddressChanged;
         string? lastHold = null;
         bool? lastPathOk = null;
+        var servicesChecked = false;
         var watcher = Task.Run(async () =>
         {
             var delay = TimeSpan.FromSeconds(10); // 부팅 직후 주소 준비를 잠시 기다린다.
@@ -123,6 +124,16 @@ internal sealed class NetworkManagerService : BackgroundService
                             ? $"{c.Key} 경유 SSH 응답 정상"
                             : $"{c.Key} 경유 SSH 응답 없음(수신={(System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(e => e.Port == c.Policy.ListenPort) ? "있음" : "없음")})");
                         lastPathOk = answers;
+                    }
+                    // 시작 후 SSH 경로가 처음 살아났을 때 한 번, 추가 서비스가 WSL 안에서 응답하는지 기록만 한다(통로는 그대로 유지, ADR 0011).
+                    if (answers && !servicesChecked && c.Coordinator.RecordedConnectAddress is { } rec)
+                    {
+                        foreach (var s in c.Policy.Services)
+                        {
+                            var up = await ServicePortsCommand.ProbeAsync(System.Net.IPAddress.Parse(rec), s.ConnectPort, TimeSpan.FromSeconds(2));
+                            log.Write("INFO", $"추가 서비스 {s.Name}({c.Policy.ListenAddress}:{s.ListenPort} → WSL {s.ConnectPort}): WSL 서비스 {(up ? "응답 있음" : "꺼짐(통로는 유지)")}");
+                        }
+                        servicesChecked = true;
                     }
                     if (!answers) delay = TimeSpan.FromSeconds(15); // 응답이 없을 때는 더 자주 확인
                 }

@@ -50,7 +50,11 @@ public sealed class RepairCoordinator(
             {
                 // 간격 제한 중이라도 이미 같은 대상이면 정상 응답한다(수신 상태는 확인).
                 var same = PortProxyReconciler.Decide(policy, host.GetPortProxies(), RecordedConnectAddress, request.ObservedWslIPv4);
-                return same.Kind == ReconcileKind.NoChange ? ListeningOrRepaired(same.Existing!, same.Reason) : new(decision.Code, decision.Reason);
+                if (same.Kind != ReconcileKind.NoChange) return new(decision.Code, decision.Reason);
+                // SSH 대상이 같으면 추가 서비스도 같은 대상으로 맞춘다('지금 연결'이 간격 제한에 걸려도 빠진 포트를 채움, ADR 0011).
+                var limited = ListeningOrRepaired(same.Existing!, same.Reason);
+                var synced = SyncServices(request.ObservedWslIPv4, RecordedConnectAddress);
+                return synced > 0 && limited.Code == RepairCode.NoChange ? new(RepairCode.Updated, $"추가 서비스 {synced}개 갱신") : limited;
             }
             if (!decision.Allowed) return new(decision.Code, decision.Reason);
 

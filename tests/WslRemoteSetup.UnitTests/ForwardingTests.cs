@@ -250,6 +250,18 @@ public class RepairCoordinatorTests
         Assert.Equal(0, host.Reapplied);
     }
 
+    [Fact]
+    public void Connect_now_within_rate_limit_still_restores_missing_service_port() // ADR 0011 '지금 연결'
+    {
+        var host = new FakeHost();
+        var c = WithServices(host);
+        Assert.Equal(RepairCode.Updated, c.Handle(ForwardingFixtures.Owner, ForwardingFixtures.Request("172.24.220.111"), "").Code);
+        host.Rules.RemoveAll(r => r.ListenPort == 8080); // 서비스 통로가 사라진 상태
+        var r = c.Handle(ForwardingFixtures.Owner, ForwardingFixtures.Request("172.24.220.111"), ""); // 간격 제한 안
+        Assert.Equal(RepairCode.Updated, r.Code);
+        Assert.Contains(host.Rules, x => x is { ListenPort: 8080, ConnectAddress: "172.24.220.111", ConnectPort: 80 });
+    }
+
     private static RepairCoordinator WithServices(FakeHost host, string? recorded = null) =>
         new(ForwardingFixtures.Policy() with { Services = [new ServiceForward("web", 8080, 80), new ServiceForward("db", 15432, 5432)] },
             host, new FakeTimeProvider(DateTimeOffset.UnixEpoch.AddDays(1)), recorded);
