@@ -466,12 +466,37 @@ internal static class AutostartCommand
     private static string LogonTaskName(Guid installationId) => $@"\WslRemoteSetup\Agent-{installationId.ToString("N")[..8]}";
 
     /// <summary>세션 0에서 실행 중인 우리 설치 경로 에이전트(로그인 전 작업이 남긴 것). 관리자 권한에서만 명령줄을 읽을 수 있다.</summary>
-    private static List<int> SessionZeroAgents()
+    private static List<int> SessionZeroAgents() => AgentProcesses(sessionZeroOnly: true);
+
+    /// <summary>
+    /// 외부 연결을 닫기 전에 자동 복구를 멈춘다: 백그라운드 연결 관리 프로그램을 멈추고 연결 규칙 파일을 지운다.
+    /// 그대로 두면 에이전트의 복구 요청으로 방금 지운 전달 규칙이 다시 생긴다(G2 실측 2026-10-19).
+    /// 서비스·작업 등록 자체는 '자동 실행 중지' 단계에서 지운다. 관리자 권한에서 호출한다.
+    /// </summary>
+    public static void DisableAutoRepair(OperationHistory history)
+    {
+        var runner = Runner();
+        if (QueryService() is { } svc && svc.State != "Stopped")
+        {
+            runner.RunAsync(new CommandSpec(Sc, ["stop", ProtectedPaths.ServiceName]) { Timeout = TimeSpan.FromSeconds(30) }).GetAwaiter().GetResult();
+            for (var k = 0; k < 20 && QueryService()?.State is { } st && st != "Stopped"; k++) Thread.Sleep(500);
+            history.Detail("자동 복구 중지", $"{ProtectedPaths.ServiceName} → {QueryService()?.State}");
+        }
+        if (File.Exists(ProtectedPaths.PolicyFile))
+        {
+            File.Delete(ProtectedPaths.PolicyFile);
+            history.Detail("연결 규칙 파일 삭제", ProtectedPaths.PolicyFile);
+        }
+    }
+
+    /// <summary>설치 경로의 에이전트 프로세스(자기 자신 제외). 관리자 권한에서만 다른 세션의 명령줄을 읽을 수 있다.</summary>
+    private static List<int> AgentProcesses(bool sessionZeroOnly)
     {
         var list = new List<int>();
         using var s = new ManagementObjectSearcher("SELECT ProcessId, SessionId, ExecutablePath, CommandLine FROM Win32_Process WHERE Name='WslRemoteSetup.exe'");
         foreach (ManagementObject m in s.Get())
-            if (Convert.ToInt32(m["SessionId"], CultureInfo.InvariantCulture) == 0
+            if ((!sessionZeroOnly || Convert.ToInt32(m["SessionId"], CultureInfo.InvariantCulture) == 0)
+                && Convert.ToInt32(m["ProcessId"], CultureInfo.InvariantCulture) != Environment.ProcessId
                 && string.Equals(m["ExecutablePath"] as string, ProtectedPaths.InstalledExe, StringComparison.OrdinalIgnoreCase)
                 && (m["CommandLine"] as string ?? "").Contains(" agent ", StringComparison.Ordinal))
                 list.Add(Convert.ToInt32(m["ProcessId"], CultureInfo.InvariantCulture));
@@ -549,8 +574,8 @@ internal static class AutostartCommand
             }, history);
             if (!skipped) remaining.Remove(r);
         }
-        // 작업을 끝내도 세션 0 에이전트(로그인 전 접속)가 남을 수 있어 정리한다.
-        foreach (var pid in SessionZeroAgents())
+        // 작업을 지워도 이미 실행 중인 에이전트(로그인 세션·세션 0)는 남는다(G2 실측 2026-10-19). 모두 끝낸다.
+        foreach (var pid in AgentProcesses(sessionZeroOnly: false))
         {
             history.Note($"남은 에이전트 종료: PID {pid}");
             try { System.Diagnostics.Process.GetProcessById(pid).Kill(entireProcessTree: true); } catch (ArgumentException) { } catch (InvalidOperationException) { }

@@ -397,8 +397,12 @@ internal static class ForwardCommand
         var n = 0;
         foreach (var r in owned) Ui.Item(++n, r.Kind == ResourceKinds.PortProxy ? "연결 전달 규칙" : "방화벽 허용 규칙", "제거");
         foreach (var r in owned) history.Detail(r.Kind, $"{r.Key} {r.Value}");
+        Ui.Note("지운 규칙이 다시 생기지 않도록 자동 복구(백그라운드 연결 관리 프로그램)도 멈춥니다.");
         if (!ConfirmPrompt.Ask(out var confirmExit)) { history.Finish("사용자가 취소함"); return confirmExit; }
 
+        history.Begin("자동 복구 중지");
+        WslRemoteSetup.Service.AutostartCommand.DisableAutoRepair(history);
+        history.Done("완료");
         var runner = WindowsForwarding.Runner();
         var snapshot = await new WindowsProbe(runner).CollectAsync();
         var remaining = state.ResourceOwnership.ToList();
