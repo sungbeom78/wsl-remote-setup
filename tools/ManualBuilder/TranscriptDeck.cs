@@ -181,6 +181,8 @@ public static partial class TranscriptDeck
             "internal-install-wsl" => "WSL 설치",
             "forward apply" => "연결 통로 열기",
             "forward remove" => "외부 연결 닫기",
+            "forward add-service" => "서비스 포트 열기",
+            "forward remove-service" => "서비스 포트 닫기",
             "autostart install" => "자동 실행 설정",
             "autostart remove" => "자동 실행 중지",
             "autostart prelogin-on" => "로그인 전 접속 켜기",
