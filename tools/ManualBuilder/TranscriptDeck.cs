@@ -25,18 +25,43 @@ public static partial class TranscriptDeck
 
     private sealed record Ev(int Window, string Kind, string? Color, string Text);
 
-    private sealed record Page(string Window, string? Step, List<List<Run>> Lines, string When);
+    /// <summary>터미널 한 장(창 이름, 단계 머리줄, 줄, 기록 시각).</summary>
+    public sealed record TranscriptPage(string Window, string? Step, List<List<Run>> Lines, string When);
 
     [GeneratedRegex(@"^\s*\[\d+/\d+\]\s")]
     private static partial Regex StepHeader();
 
     public static int Run(string folder, string output, string? previewDir, string? maskFile, string title)
     {
+        var pages = LoadPages(folder, maskFile);
+        if (pages.Count == 0) { Console.Error.WriteLine("기록 파일이 없습니다."); return 2; }
+        var slides = new List<Slide>();
+        for (var i = 0; i < pages.Count; i++)
+        {
+            var s = new Slide { Background = "000000" };
+            slides.Add(s);
+            RenderPage(s, pages[i], $"{title} · 실제 화면 기록({pages[i].When}) · 굵은 글자 = 입력, ▶ 회색 = 다른 프로그램 화면(기록 안 함)", $"{i + 1} / {pages.Count}");
+        }
+        return Finish(slides, output, previewDir, title, maskFile is not null);
+    }
+
+    /// <summary>터미널 한 장을 슬라이드에 그린다(위 제목 막대 + 검은 화면 + 아래 설명).</summary>
+    public static void RenderPage(Slide s, TranscriptPage p, string caption, string? pageNo = null, double top = 0.25)
+    {
+        s.Box(0.35, top, SlideW - 0.7, 0.42, [new P(p.Window + (p.Step is null ? "" : "   " + p.Step), 13, "E6E6E6", Bold: true, After: 0)],
+            "2B2B2B", geom: "rect", anchor: "ctr", inset: 0.08, name: "TitleBar");
+        s.Terminal(0.35, top + 0.42, SlideW - 0.7, 7.05 - top - 0.42, p.Lines, FontPt, "0C0C0C", 0.2);
+        s.Text(0.35, 7.12, 10.5, 0.28, new P(caption, 9, "8A8A8A", After: 0));
+        if (pageNo is not null) s.Text(SlideW - 1.4, 7.12, 1.05, 0.28, new P(pageNo, 9, "8A8A8A", Align: "r", After: 0));
+    }
+
+    /// <summary>기록 폴더를 터미널 장 목록으로 바꾼다(--mask가 있으면 공개용 치환).</summary>
+    public static List<TranscriptPage> LoadPages(string folder, string? maskFile)
+    {
         var mask = maskFile is null ? [] : JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(maskFile))!;
         string M(string s) => mask.Aggregate(s, (acc, kv) => acc.Replace(kv.Key, kv.Value, StringComparison.Ordinal));
 
         var files = Directory.GetFiles(folder, "*.jsonl").OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal).ToList();
-        if (files.Count == 0) { Console.Error.WriteLine("기록 파일이 없습니다."); return 2; }
 
         // 파일(창)마다 이벤트를 시간순으로 모은 뒤 전체를 시간순으로 합친다.
         var labels = new List<string>();
@@ -75,13 +100,13 @@ public static partial class TranscriptDeck
         all.Sort((a, b) => a.At != b.At ? a.At.CompareTo(b.At) : a.Seq.CompareTo(b.Seq));
 
         // 창이 바뀌거나, 단계 머리줄([n/N])이 나오거나, 줄이 많으면 새 장으로 나눈다.
-        var pages = new List<Page>();
-        Page? page = null;
+        var pages = new List<TranscriptPage>();
+        TranscriptPage? page = null;
         List<Run>? line = null;
         int? window = null;
         string? step = null;
 
-        void NewPage() { page = new Page(labels[window!.Value], step, [], whens[window.Value]); pages.Add(page); line = null; }
+        void NewPage() { page = new TranscriptPage(labels[window!.Value], step, [], whens[window.Value]); pages.Add(page); line = null; }
         void EndLine() { if (line is null) { page!.Lines.Add([]); } line = null; }
         void Add(Run r)
         {
@@ -135,20 +160,12 @@ public static partial class TranscriptDeck
             while (p.Lines.Count > 0 && p.Lines[^1].Count == 0) p.Lines.RemoveAt(p.Lines.Count - 1);
         }
         pages.RemoveAll(p => p.Lines.Count == 0);
+        return pages;
+    }
 
-        var slides = new List<Slide>();
-        for (var i = 0; i < pages.Count; i++)
-        {
-            var p = pages[i];
-            var s = new Slide { Background = "000000" };
-            slides.Add(s);
-            s.Box(0.35, 0.25, SlideW - 0.7, 0.42, [new P(p.Window + (p.Step is null ? "" : "   " + p.Step), 13, "E6E6E6", Bold: true, After: 0)],
-                "2B2B2B", geom: "rect", anchor: "ctr", inset: 0.08, name: "TitleBar");
-            s.Terminal(0.35, 0.67, SlideW - 0.7, 6.38, p.Lines, FontPt, "0C0C0C", 0.2);
-            s.Text(0.35, 7.12, 9.5, 0.28, new P($"{title} · 실제 화면 기록({p.When}) · 굵은 글자 = 입력, ▶ 회색 = 다른 프로그램 화면(기록 안 함)", 9, "8A8A8A", After: 0));
-            s.Text(SlideW - 1.4, 7.12, 1.05, 0.28, new P($"{i + 1} / {pages.Count}", 9, "8A8A8A", Align: "r", After: 0));
-        }
-
+    /// <summary>저장·스키마 검증·미리보기(선택).</summary>
+    public static int Finish(List<Slide> slides, string output, string? previewDir, string title, bool masked)
+    {
         Fonts.Body = "맑은 고딕";
         Deck.Write(output, slides, title);
         using (var doc = DocumentFormat.OpenXml.Packaging.PresentationDocument.Open(output, false))
@@ -157,7 +174,7 @@ public static partial class TranscriptDeck
             foreach (var e in errors.Take(10)) Console.WriteLine($"[검증] {e.Part?.Uri} {e.Description}");
             Console.WriteLine($"검증 오류 {errors.Count}건");
         }
-        Console.WriteLine($"기록 {files.Count}개 창 → 화면 {slides.Count}장 → {Path.GetFullPath(output)}{(maskFile is null ? "" : " (공개용 치환 적용)")}");
+        Console.WriteLine($"화면 {slides.Count}장 → {Path.GetFullPath(output)}{(masked ? " (공개용 치환 적용)" : "")}");
         if (previewDir is not null && OperatingSystem.IsWindows())
         {
             var problems = Preview.Render(slides, previewDir);

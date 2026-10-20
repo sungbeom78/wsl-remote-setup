@@ -37,6 +37,8 @@ public static class Pal
 /// <summary>터미널 한 조각(글자·색). 굵게는 사용자가 입력한 글자 표시용.</summary>
 public sealed record Run(string Text, string Color, bool Bold = false, bool Italic = false);
 
+public sealed record ImageInfo(string Path, double X, double Y, double W, double H, string Rid);
+
 public sealed record TerminalInfo(double X, double Y, double W, double H, IReadOnlyList<IReadOnlyList<Run>> Lines, double Size, string Bg, double Inset);
 
 public sealed record ShapeInfo(double X, double Y, double W, double H, string? Fill, string? Line, string Geom, string Anchor, double Inset, IReadOnlyList<P> Text, string Name);
@@ -123,6 +125,22 @@ public sealed class Slide
         return this;
     }
 
+    /// <summary>슬라이드에 넣은 그림(PNG). Deck.Write가 media 파트와 관계를 만든다.</summary>
+    public List<ImageInfo> Images { get; } = [];
+
+    public Slide Image(string path, double x, double y, double w, double h, string descr, string? border = null)
+    {
+        var rid = $"rId{Images.Count + 2}"; // rId1은 슬라이드 레이아웃
+        Images.Add(new ImageInfo(path, x, y, w, h, rid));
+        var id = _id++;
+        _sp.Append($"<p:pic><p:nvPicPr><p:cNvPr id=\"{id}\" name=\"Picture {id}\" descr=\"{X(descr)}\"/><p:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>");
+        _sp.Append($"<p:blipFill><a:blip r:embed=\"{rid}\"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>");
+        _sp.Append($"<p:spPr><a:xfrm><a:off x=\"{E(x)}\" y=\"{E(y)}\"/><a:ext cx=\"{E(w)}\" cy=\"{E(h)}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>");
+        _sp.Append(border is null ? "<a:ln><a:noFill/></a:ln>" : $"<a:ln w=\"12700\"><a:solidFill><a:srgbClr val=\"{border}\"/></a:solidFill></a:ln>");
+        _sp.Append("</p:spPr></p:pic>");
+        return this;
+    }
+
     public string Xml() =>
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
         "<p:sld xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\">" +
@@ -154,6 +172,7 @@ public static class Deck
         var ct = new StringBuilder(Head + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">" +
             "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>" +
             "<Default Extension=\"xml\" ContentType=\"application/xml\"/>" +
+            "<Default Extension=\"png\" ContentType=\"image/png\"/>" +
             "<Override PartName=\"/ppt/presentation.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml\"/>" +
             "<Override PartName=\"/ppt/slideMasters/slideMaster1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml\"/>" +
             "<Override PartName=\"/ppt/slideLayouts/slideLayout1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml\"/>" +
@@ -217,11 +236,20 @@ public static class Deck
             $"<Relationship Id=\"rId1\" Type=\"{Rel}/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>");
         Add("ppt/theme/theme1.xml", Theme());
 
+        var mediaCount = 0;
         for (var i = 0; i < slides.Count; i++)
         {
             Add($"ppt/slides/slide{i + 1}.xml", slides[i].Xml());
+            var imageRels = new StringBuilder();
+            foreach (var img in slides[i].Images)
+            {
+                var media = $"image{++mediaCount}.png";
+                var e = zip.CreateEntry($"ppt/media/{media}", CompressionLevel.NoCompression);
+                using (var s = e.Open()) s.Write(File.ReadAllBytes(img.Path));
+                imageRels.Append($"<Relationship Id=\"{img.Rid}\" Type=\"{Rel}/image\" Target=\"../media/{media}\"/>");
+            }
             Add($"ppt/slides/_rels/slide{i + 1}.xml.rels", Head + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" +
-                $"<Relationship Id=\"rId1\" Type=\"{Rel}/slideLayout\" Target=\"../slideLayouts/slideLayout1.xml\"/></Relationships>");
+                $"<Relationship Id=\"rId1\" Type=\"{Rel}/slideLayout\" Target=\"../slideLayouts/slideLayout1.xml\"/>{imageRels}</Relationships>");
         }
     }
 

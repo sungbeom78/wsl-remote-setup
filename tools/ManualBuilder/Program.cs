@@ -4,6 +4,13 @@ using ManualBuilder;
 
 // 사용: dotnet run --project tools/ManualBuilder -- <출력.pptx> [미리보기폴더] [--lang ko|en]
 //      dotnet run --project tools/ManualBuilder -- --transcripts <기록폴더> <출력.pptx> [이미지폴더] [--mask 치환.json] [--title 제목]
+//      dotnet run --project tools/ManualBuilder -- --talk <출력.pptx> [미리보기폴더] --recordings <기록폴더> --assets <그림폴더> --script <대본.md> [--mask 치환.json]
+if (args.Length >= 2 && args[0] == "--talk")
+{
+    string? TOpt(string name) => Array.IndexOf(args, name) is var k && k >= 0 && k + 1 < args.Length ? args[k + 1] : null;
+    var preview = args.Length > 2 && !args[2].StartsWith("--", StringComparison.Ordinal) ? args[2] : null;
+    return TalkDeck.Run(args[1], preview, TOpt("--recordings")!, TOpt("--mask"), TOpt("--assets")!, TOpt("--script")!);
+}
 if (args.Length >= 3 && args[0] == "--transcripts")
 {
     string? Opt(string name) => Array.IndexOf(args, name) is var k && k >= 0 && k + 1 < args.Length ? args[k + 1] : null;

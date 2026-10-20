@@ -64,6 +64,12 @@ public static class Preview
                     problems.Add($"슬라이드 {i + 1}: '{s.Text[0].Text}' 필요 {total / Dpi:0.00}in > 상자 {inner.Height / Dpi:0.00}in");
                 }
             }
+            foreach (var im in slides[i].Images)
+            {
+                using var pic = Image.FromFile(im.Path);
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.DrawImage(pic, (float)im.X * Dpi, (float)im.Y * Dpi, (float)im.W * Dpi, (float)im.H * Dpi);
+            }
             foreach (var t in slides[i].Terminals)
             {
                 var problem = DrawTerminal(g, t);
