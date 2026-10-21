@@ -170,6 +170,6 @@ dotnet run --project tools/ManualBuilder -- artifacts/manual/WSL_Remote_Setup_Ma
 
 ## 내려받기
 
-[Releases](https://github.com/sungbeom78/wsl-remote-setup/releases)에서 EXE와 설치 매뉴얼(PowerPoint, 한국어·영어)을 받을 수 있습니다.
+[Releases](https://github.com/edubeom/wsl-remote-setup/releases)에서 EXE와 설치 매뉴얼(PowerPoint, 한국어·영어)을 받을 수 있습니다.
 An English installation manual is also available on the Releases page (the program's screens are in Korean).
 대부분의 PC는 `win-x64`, ARM 노트북은 `win-arm64`를 받으세요.

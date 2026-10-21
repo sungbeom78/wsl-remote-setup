@@ -148,7 +148,7 @@
 
 ## 공개·배포 (2026-10-19)
 
-- 저장소: https://github.com/sungbeom78/wsl-remote-setup (공개, MIT)
+- 저장소: https://github.com/edubeom/wsl-remote-setup (공개, MIT)
   - 공개 전에 커밋 기록 전체의 실제 값을 예시 값으로 바꿨다. 대응표는 `.local/REAL_VALUES.md`에 있다.
 - 릴리스: v0.1.0 (커밋 57f226c), 파일 5개. GitHub 쪽 SHA-256 값이 로컬 빌드와 모두 일치한다.
   - `WslRemoteSetup-0.1.0-win-x64.exe`

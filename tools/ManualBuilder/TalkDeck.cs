@@ -67,7 +67,7 @@ public static class TalkDeck
                 new P("소파에서 노트북으로 이어서 일하기", 28, "D9E2EC", After: 0));
             s.Text(0.8, 4.4, 9, 1.2,
                 new P("리눅스가 왜 필요한지 → WSL → Windows Pro → 설치 → 접속 → 서비스 포트 → 되돌리기", 14, "AFC2D6", After: 6),
-                new P("github.com/sungbeom78/wsl-remote-setup  ·  문의 https://www.edubeom.com/", 13, "AFC2D6", After: 0));
+                new P("github.com/edubeom/wsl-remote-setup  ·  문의 https://www.edubeom.com/", 13, "AFC2D6", After: 0));
             string[] tags = ["Linux", "WSL", "SSH"];
             for (var i = 0; i < 3; i++)
                 s.Box(10.4, 1.4 + i * 1.6, 1.3, 1.3, [new P(tags[i], 19, Pal.White, Bold: true, Align: "ctr", After: 0)], Pal.Teal, geom: "ellipse", anchor: "ctr", inset: 0, name: "Tag");
@@ -265,7 +265,7 @@ public static class TalkDeck
             s.Box(7.6, 1.95, 5.13, 4.55, null, Pal.TealSoft, geom: "roundRect", name: "Download");
             s.Text(7.9, 2.15, 4.6, 0.45, new P("내려받기", 18, Pal.Teal, Bold: true, After: 0));
             s.Text(7.9, 2.7, 4.6, 0.7, new P("GitHub → Releases에서 EXE 하나", 14, Pal.Ink, After: 0));
-            s.Box(7.9, 3.3, 4.55, 0.55, [new P("github.com/sungbeom78/wsl-remote-setup", 12, Pal.Ink, Mono: true, After: 0)], Pal.White, anchor: "ctr", inset: 0.15, name: "Url");
+            s.Box(7.9, 3.3, 4.55, 0.55, [new P("github.com/edubeom/wsl-remote-setup", 12, Pal.Ink, Mono: true, After: 0)], Pal.White, anchor: "ctr", inset: 0.15, name: "Url");
             s.Text(7.9, 4.05, 4.6, 0.5, new P("이 PC 주소 확인(명령 프롬프트)", 14, Pal.Ink, After: 0));
             s.Box(7.9, 4.55, 4.55, 0.55, [new P("ipconfig  →  IPv4 주소", 13, Pal.Ink, Mono: true, After: 0)], Pal.White, anchor: "ctr", inset: 0.15, name: "Ip");
             s.Text(7.9, 5.3, 4.6, 1.0, new P("설치 매뉴얼(PowerPoint)도 같은 곳에 있습니다.", 13, Pal.Muted, After: 0));
@@ -459,7 +459,7 @@ public static class TalkDeck
             Slides.Add(s);
             s.Text(0.8, 2.0, 11.7, 1.0, new P("감사합니다", 44, Pal.White, Bold: true, After: 0));
             s.Text(0.8, 3.2, 11.7, 1.6,
-                new P("내려받기·소스: github.com/sungbeom78/wsl-remote-setup", 18, "D9E2EC", After: 8),
+                new P("내려받기·소스: github.com/edubeom/wsl-remote-setup", 18, "D9E2EC", After: 8),
                 new P("문의·의견: https://www.edubeom.com/", 18, "D9E2EC", After: 0));
             s.Text(0.8, 5.4, 11.7, 0.6, new P("MIT 라이선스 · 누구나 자유롭게 쓰고 고칠 수 있습니다", 14, "AFC2D6", After: 0));
             Notes.Add(("마무리", "오늘 보신 프로그램과 매뉴얼은 GitHub에서 받으실 수 있습니다. 궁금한 점이나 의견은 edubeom.com으로 남겨 주세요. 시청해 주셔서 감사합니다."));
